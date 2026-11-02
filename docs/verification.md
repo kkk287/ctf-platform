@@ -151,18 +151,34 @@ docker compose up -d --build
 
 种子数据（首次启动、数据库为空时写入）：2 个赛事/练习区、5 道题、2 支战队、7 条解题记录、2 条公告、错误提交若干。
 
-## 7. 未在本机验证 / 需服务器最终核验
+## 7. GitHub 推送与 Actions 实测结果
+
+- 仓库：<https://github.com/kkk287/ctf-platform>（Public）
+- 推送内容：`main` 分支 3 个提交（作者统一为 `kkk287 <213058170+kkk287@users.noreply.github.com>`）+ tag `v1.0.0`
+- Actions 实测：
+
+| 工作流 | Run ID | 触发 | 结果 | 耗时 |
+|---|---|---|---|---|
+| CI | 41510609884 | push main | success | 3m12s |
+| CI | 41510974229 | push main | success | 1m01s |
+| Deploy | 41511288897 | push tag `v1.0.0` | success（Build & Push to GHCR 41s；`Deploy over SSH` 因未设 `DEPLOY_ENABLED` 按设计跳过） | 41s |
+
+- GHCR 实测匿名拉取：`GET https://ghcr.io/v2/kkk287/ctf-platform/tags/list` → `v1.0.0, latest, sha-c8e17a1`，说明包已为 Public，方式 B 可直接 `docker compose pull`。
+- 敏感文件检查：`git ls-tree -r HEAD` 中无 `.env`、`data/`、`target/`、私钥；`.env`、`data/`、`target/` 均被 `.gitignore` 命中，Docker 构建上下文由 `.dockerignore` 排除。
+- 说明：运行产物（`data/`、`target/`）在仓库外生成，不随仓库分发。
+
+## 8. 未在本机验证 / 需服务器最终核验
 
 | 项目 | 状态 | 原因 / 核验方式 |
 |---|---|---|
-| GitHub Actions CI（JDK17 + test + 镜像构建） | 配置完成，未在 GitHub 实际运行 | 需推送到 GitHub 仓库后查看 Actions；工作流与本地命令一致 |
-| GHCR 镜像推送与包可见性 | 配置完成，未实际推送 | 需配置仓库后打 tag；按 `docs/DEPLOY.md` 设置 Public 包或 `GHCR_TOKEN` |
+| GitHub Actions CI（JDK17 + test + 镜像构建） | **已实测通过** | 见第 7 节 Run 列表 |
+| GHCR 镜像推送与包可见性 | **已实测通过** | 已推送 `v1.0.0/latest/sha-c8e17a1`，匿名拉取成功（Public） |
 | SSH 自动部署 | 配置完成，未实际连接服务器 | 需提供 `SERVER_HOST / SERVER_USER / SERVER_SSH_KEY` 并在服务器安装 Docker |
 | 公网域名 / 端口 / 防火墙 | 未验证 | 需用户在云安全组放行端口并用 `curl /actuator/health` 核验 |
 | MySQL / PostgreSQL 实库 | 未验证 | 本机无对应服务；SQL 为可移植写法，建议上线前用目标库跑一次 Flyway |
 | 容器重启自恢复 | 已本机验证（`unless-stopped` + 健康检查 + 数据卷持久化，见第 5 节） | 服务器 `reboot` 后复查 `docker compose ps` 与健康端点 |
 
-## 8. 已知限制（与设计一致）
+## 9. 已知限制（与设计一致）
 
 - 不做动态靶机下发；靶机类题目以附件与外部地址承载。
 - 不做 CTFd 插件兼容与 OAuth。
