@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>登录 · CTF PLATFORM</title>
+  <link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+<div class="login-wrap">
+  <div class="login-shell">
+    <div class="login-intro">
+      <div>
+        <div class="brand">
+          <span class="brand-mark">./ctf</span>
+          <span>CTF PLATFORM <small>SEC LAB</small></span>
+        </div>
+        <h1>夺旗，从第一行<br>payload 开始。</h1>
+        <p class="muted">赛事与练习双模式，动态积分、一血奖励、个人榜与战队榜实时刷新。</p>
+        <div class="term">
+          <div><span class="dim">$</span> <span class="cmd">whoami</span> --verbose</div>
+          <div><span class="dim">></span> role: player / admin</div>
+          <div><span class="dim">></span> auth: JWT · bcrypt</div>
+          <div><span class="dim">$</span> <span class="cmd">submit</span> flag{...}</div>
+        </div>
+      </div>
+      <div class="muted small mono">CTF-PLATFORM v1.0 · 离线可用 · 无外部 CDN</div>
+    </div>
+
+    <div class="login-form">
+      <div class="tabs" id="mode-tabs">
+        <button type="button" class="active" data-mode="login">登录</button>
+        <button type="button" data-mode="register">注册</button>
+      </div>
+      <h2 id="form-title">登录 CTF 平台</h2>
+      <p class="sub" id="form-sub">使用演示账号或注册新选手账号进入平台。</p>
+
+      <form id="auth-form" autocomplete="on">
+        <div class="field" id="display-field" style="display:none">
+          <label for="displayName">昵称（可选）</label>
+          <input class="input" id="displayName" name="displayName" maxlength="60" placeholder="显示在排行榜上的昵称">
+        </div>
+        <div class="field">
+          <label for="username">用户名</label>
+          <input class="input" id="username" name="username" autocomplete="username"
+                 placeholder="3-20 位字母、数字或下划线" required>
+        </div>
+        <div class="field">
+          <label for="password">密码</label>
+          <input class="input" id="password" name="password" type="password" autocomplete="current-password"
+                 placeholder="至少 8 位" required>
+          <div class="hint" id="password-hint">登录演示账号可直接使用下方凭据。</div>
+        </div>
+        <button class="btn btn-primary btn-block" id="submit-btn" type="submit">登录</button>
+      </form>
+
+      <div class="demo-list" id="demo-list">
+        <div class="muted small" style="margin-top:4px">演示账号（点击自动填充）</div>
+        <button type="button" class="demo-item" data-username="admin" data-password="Admin@123">
+          <span>管理员 ADMIN</span><span class="cred">admin / Admin@123</span>
+        </button>
+        <button type="button" class="demo-item" data-username="alice" data-password="Alice@123">
+          <span>选手 alice · 0x00sec 队长</span><span class="cred">alice / Alice@123</span>
+        </button>
+        <button type="button" class="demo-item" data-username="bob" data-password="Bob@123">
+          <span>选手 bob · 0x00sec</span><span class="cred">bob / Bob@123</span>
+        </button>
+        <button type="button" class="demo-item" data-username="carol" data-password="Carol@123">
+          <span>选手 carol · Byte Raiders 队长</span><span class="cred">carol / Carol@123</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="/assets/common.js"></script>
+<script src="/assets/login.js"></script>
+</body>
+</html>

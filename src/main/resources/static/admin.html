@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>管理后台 · CTF PLATFORM</title>
+  <link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner" id="topbar"></div>
+</header>
+
+<main class="page">
+  <div class="page-head">
+    <div>
+      <h1 class="page-title"><span class="hash">#</span>管理后台</h1>
+      <p class="page-sub">题目与赛事管理、用户封禁、提交审计、异常告警与公告。仅 ADMIN 可访问接口。</p>
+    </div>
+  </div>
+
+  <div class="tabs admin-tabs" id="admin-tabs">
+    <button type="button" class="active" data-tab="challenges">题目</button>
+    <button type="button" data-tab="events">赛事/练习</button>
+    <button type="button" data-tab="users">用户</button>
+    <button type="button" data-tab="submissions">提交审计</button>
+    <button type="button" data-tab="anomalies">异常告警</button>
+    <button type="button" data-tab="announcements">公告</button>
+  </div>
+
+  <section class="panel panel-pad admin-panel" id="admin-content">
+    <div class="loading">加载管理数据</div>
+  </section>
+</main>
+
+<div class="page-footer">
+  <span>CTF PLATFORM · ADMIN</span>
+  <span>所有管理接口 /api/admin/** 由 Spring Security 强制 ADMIN 角色校验</span>
+</div>
+
+<div class="modal-mask" id="modal-mask">
+  <div class="modal" id="modal-box">
+    <div class="modal-head">
+      <h3 id="modal-title">—</h3>
+      <button class="modal-close" id="modal-close" type="button">×</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-foot" id="modal-foot"></div>
+  </div>
+</div>
+
+<script src="/assets/common.js"></script>
+<script src="/assets/admin.js"></script>
+</body>
+</html>

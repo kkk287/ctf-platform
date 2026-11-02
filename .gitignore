@@ -1,0 +1,26 @@
+# 构建产物
+target/
+build/
+out/
+
+# 运行数据（H2 文件库、附件、日志）
+data/
+*.log
+logs/
+
+# 本地环境与密钥
+.env
+.env.*
+!.env.example
+
+# IDE / 系统
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+.DS_Store
+Thumbs.db
+
+# 测试临时目录
+/tmp/

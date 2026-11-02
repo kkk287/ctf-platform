@@ -1,0 +1,29 @@
+# 本地 / 单机部署：docker compose up -d --build
+# 服务器部署使用 deploy/docker-compose.server.yml（直接拉取 GHCR 镜像）
+services:
+  ctf:
+    build:
+      context: .
+    image: ${APP_IMAGE:-ctf-platform:local}
+    container_name: ctf-platform
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-h2}
+      JWT_SECRET: ${JWT_SECRET:-}
+      DEMO_SEED_ENABLED: ${DEMO_SEED_ENABLED:-true}
+      UPLOAD_DIR: /app/data/uploads
+      TZ: Asia/Shanghai
+    volumes:
+      - ctf-data:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/actuator/health | grep -q '\"status\":\"UP\"' || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 45s
+
+volumes:
+  ctf-data:
+    name: ctf-platform-data
