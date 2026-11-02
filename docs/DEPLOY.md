@@ -60,7 +60,7 @@ curl http://localhost:8080/actuator/health
 
 ## 3. GitHub 部署（三步走）
 
-以下步骤对"fork 官方仓库"和"推到自己新建仓库"都适用，只需替换仓库地址。
+以下命令均使用真实仓库地址 `kkk287/ctf-platform`；若你 fork 到其他账号，替换为对应地址即可。
 
 ### 第 1 步：推送仓库
 
@@ -70,7 +70,7 @@ git init
 git add .
 git commit -m "feat: CTF platform initial commit"
 git branch -M main
-git remote add origin https://github.com/<owner>/ctf-platform.git
+git remote add origin https://github.com/kkk287/ctf-platform.git
 git push -u origin main
 ```
 
@@ -125,7 +125,7 @@ git push origin v1.0.0
 
 `deploy.yml` 将：
 
-1. 构建镜像并推送 `ghcr.io/<owner>/ctf-platform:v1.0.0`（同时推送 `latest`、`sha-<短哈希>`）
+1. 构建镜像并推送 `ghcr.io/kkk287/ctf-platform:v1.0.0`（同时推送 `latest`、`sha-<短哈希>`）
 2. 通过 scp 把 `deploy/docker-compose.server.yml` 复制到服务器 `/opt/ctf/docker-compose.yml`
 3. SSH 执行 `docker compose pull` + `up -d`（重启容器），保留服务器 `.env` 中已有的 `JWT_SECRET`
 4. 输出 `docker compose ps`
@@ -138,8 +138,8 @@ git push origin v1.0.0
 
 ```bash
 sudo mkdir -p /opt/ctf && cd /opt/ctf \
-&& curl -fsSL https://raw.githubusercontent.com/<owner>/ctf-platform/main/deploy/docker-compose.server.yml -o docker-compose.yml \
-&& echo "APP_IMAGE=ghcr.io/<owner>/ctf-platform:latest" > .env \
+&& curl -fsSL https://raw.githubusercontent.com/kkk287/ctf-platform/main/deploy/docker-compose.server.yml -o docker-compose.yml \
+&& echo "APP_IMAGE=ghcr.io/kkk287/ctf-platform:latest" > .env \
 && echo "JWT_SECRET=$(openssl rand -hex 32)" >> .env \
 && docker compose pull && docker compose up -d
 ```
@@ -155,7 +155,7 @@ echo "<GHCR_TOKEN>" | docker login ghcr.io -u <github用户名> --password-stdin
 仓库自成闭环，服务器只需 Docker：
 
 ```bash
-git clone https://github.com/<owner>/ctf-platform.git /opt/ctf-src
+git clone https://github.com/kkk287/ctf-platform.git /opt/ctf-src
 cd /opt/ctf-src
 cp .env.example .env    # 修改 JWT_SECRET / APP_PORT
 docker compose up -d --build
@@ -282,7 +282,7 @@ docker compose up -d
 
 ```bash
 cd /opt/ctf
-sed -i 's|^APP_IMAGE=.*|APP_IMAGE=ghcr.io/<owner>/ctf-platform:v1.0.0|' .env
+sed -i 's|^APP_IMAGE=.*|APP_IMAGE=ghcr.io/kkk287/ctf-platform:v1.0.0|' .env
 docker compose -f docker-compose.server.yml up -d
 ```
 

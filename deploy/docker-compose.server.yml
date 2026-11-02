@@ -2,7 +2,7 @@
 # 由 GitHub Actions 自动复制到服务器 /opt/ctf/docker-compose.yml
 services:
   ctf:
-    image: ${APP_IMAGE:?缺少 APP_IMAGE，请在 .env 中设置，例如 ghcr.io/your-name/ctf-platform:latest}
+    image: ${APP_IMAGE:?缺少 APP_IMAGE，请在 .env 中设置，例如 ghcr.io/kkk287/ctf-platform:latest}
     container_name: ctf-platform
     restart: unless-stopped
     ports:
