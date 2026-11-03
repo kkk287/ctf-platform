@@ -2,6 +2,7 @@ package com.example.ctf.service;
 
 import com.example.ctf.common.BusinessException;
 import com.example.ctf.common.ErrorCode;
+import com.example.ctf.domain.Role;
 import com.example.ctf.domain.Team;
 import com.example.ctf.domain.User;
 import com.example.ctf.dto.TeamDtos;
@@ -32,6 +33,9 @@ public class TeamService {
     @Transactional
     public TeamDtos.TeamInfoDto create(String userId, TeamDtos.CreateTeamRequest request) {
         User user = authService.requireUser(userId);
+        if (user.getRole() == Role.OBSERVER) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "观摩账号不可参与组队");
+        }
         if (user.getTeam() != null) {
             throw new BusinessException(ErrorCode.INVALID_STATE, "你已加入战队，请先退出当前战队");
         }
@@ -52,6 +56,9 @@ public class TeamService {
     @Transactional
     public TeamDtos.TeamInfoDto join(String userId, TeamDtos.JoinTeamRequest request) {
         User user = authService.requireUser(userId);
+        if (user.getRole() == Role.OBSERVER) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "观摩账号不可参与组队");
+        }
         if (user.getTeam() != null) {
             throw new BusinessException(ErrorCode.INVALID_STATE, "你已加入战队，请先退出当前战队");
         }

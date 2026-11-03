@@ -13,6 +13,10 @@ public class Event {
     @Column(length = 36)
     private String id;
 
+    /** 赛事命名空间：数据逻辑隔离单元，全局唯一；缺省取赛事 id */
+    @Column(nullable = false, length = 60)
+    private String namespace;
+
     @Column(nullable = false, length = 80)
     private String name;
 
@@ -38,6 +42,9 @@ public class Event {
         if (id == null) {
             id = UUID.randomUUID().toString();
         }
+        if (namespace == null || namespace.isBlank()) {
+            namespace = id;
+        }
         if (createdAt == null) {
             createdAt = LocalDateTime.now();
         }
@@ -49,6 +56,14 @@ public class Event {
 
     public void setId(String id) {
         this.id = id;
+    }
+
+    public String getNamespace() {
+        return namespace;
+    }
+
+    public void setNamespace(String namespace) {
+        this.namespace = namespace;
     }
 
     public String getName() {

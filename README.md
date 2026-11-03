@@ -5,7 +5,7 @@
 
 一个可直接从 GitHub 拉取、在服务器上用 **一条命令** 启动的 CTF 平台。同时支持**赛事（COMPETITION，限时、到点截止）**与**练习区（PRACTICE，长期开放、独立计分独立榜单）**两种模式；内置动态积分、一血/二血/三血奖励、提示扣分、个人榜与战队榜、管理后台与提交审计。
 
-默认使用 H2 文件库 + Docker 数据卷，开箱即用，不依赖任何外部数据库；MySQL / PostgreSQL 为可选 profile。前端全部为本地静态资源，**零外网 CDN**，内网/离线可用。
+本机直跑默认 H2 文件库，开箱即用，不依赖任何外部数据库；Docker Compose 默认编排 **MySQL 8 + Redis 7 + MongoDB 6** 全家桶（在 `.env` 设 `SPRING_PROFILES_ACTIVE=h2`、`REDIS_ENABLED=false`、`MONGO_ENABLED=false` 可回到轻量模式）。MySQL / PostgreSQL profile 可自由切换。前端全部为本地静态资源，**零外网 CDN**，内网/离线可用。
 
 ---
 
@@ -54,16 +54,18 @@
 
 **用户与战队**
 
-- 注册 / 登录 / JWT 无状态认证 / BCrypt；角色 `USER` / `ADMIN`。
+- 注册 / 登录 / 登出（服务端吊销 token，Redis 或内存黑名单）/ JWT 无状态认证 / BCrypt。
+- 角色体系：`USER` 选手 / `JUDGE` 裁判 / `TEACHER` 教师 / `OBSERVER` 观摩（只读）/ `ADMIN` 管理员。
 - 战队：创建（生成邀请码）、凭邀请码加入、退出、队长移除成员。
 
 **管理后台**（`/admin.html`）
 
-- 题目、赛事（含 PRACTICE）、用户封禁/解封、公告、提交审计、异常告警。
+- 题目、赛事（含 PRACTICE、namespace 命名空间唯一标识）、用户封禁/解封与角色变更、公告、提交审计、异常告警、操作审计日志（可镜像至 MongoDB `op_logs`）。
 
 **工程化**
 
 - 统一响应体 `{code, message, data}`、全局异常处理、Jakarta Validation、分页。
+- 基础设施可插拔：Redis（JWT 吊销黑名单，缺省降级为内存实现）与 MongoDB（审计日志异步镜像，缺省关闭），均不影响启动。
 - OpenAPI（`/swagger-ui.html`）、Actuator 健康检查（`/actuator/health`）。
 - Docker 多阶段构建、非 root 运行、healthcheck、`restart: unless-stopped`、named volume 持久化。
 - GitHub Actions：CI（构建 + 测试 + 镜像构建）、Deploy（GHCR 推送 + SSH 部署）。
@@ -76,8 +78,10 @@
 | 框架 | Spring Boot 3.2.12 |
 | 构建 | Maven Wrapper（自带 Maven 3.9.9，无需本机安装） |
 | 持久化 | Spring Data JPA + Hibernate（`ddl-auto=validate`）+ Flyway 迁移 |
-| 数据库 | H2 文件库（默认）/ MySQL / PostgreSQL（可选 profile） |
-| 安全 | Spring Security 6 + JWT（jjwt 0.12.5）+ BCrypt + RBAC |
+| 数据库 | H2 文件库（本机默认）/ MySQL 8（compose 默认）/ PostgreSQL（可选 profile） |
+| 缓存 | Redis 7（可选；JWT 吊销黑名单，缺省降级内存实现） |
+| 文档库 | MongoDB 6（可选；审计日志镜像 `op_logs`，缺省关闭） |
+| 安全 | Spring Security 6 + JWT（jjwt 0.12.5，含 jti 吊销）+ BCrypt + RBAC |
 | 文档 | springdoc-openapi 2.3.0 |
 | 前端 | 原生 HTML/CSS/JS（深色科技风，零构建、零 CDN） |
 | 部署 | Docker 多阶段构建 + Docker Compose v2 + GHCR + GitHub Actions |
@@ -140,15 +144,17 @@ sed -i "s|^JWT_SECRET=.*|JWT_SECRET=$(openssl rand -hex 32)|" .env
 docker compose up -d --build
 ```
 
+> 默认编排 **MySQL + Redis + MongoDB** 全家桶（应用默认 `mysql` profile，等依赖健康后再启动）。轻量体验：在 `.env` 设 `SPRING_PROFILES_ACTIVE=h2`、`REDIS_ENABLED=false`、`MONGO_ENABLED=false` 后重新 `docker compose up -d --build`。
+
 验证：
 
 ```bash
-docker compose ps                                  # STATUS 应为 healthy
+docker compose ps                                  # mysql/redis/mongo/ctf 均应为 healthy
 curl -fsS http://127.0.0.1:8080/actuator/health    # {"status":"UP"}
 ```
 
 - 页面：`http://<服务器IP>:8080/`
-- 数据持久化：named volume `ctf-platform-data` → 容器 `/app/data`（H2 库 + 附件）
+- 数据持久化：named volume `ctf-platform-mysql`（业务数据）、`ctf-platform-mongo`（审计镜像）、`ctf-platform-data` → 容器 `/app/data`（附件；H2 轻量模式时 H2 库也在此）
 - 停止：`docker compose down`（保留数据）；彻底清理：`docker compose down -v`
 
 ---
@@ -163,12 +169,15 @@ curl -fsSL https://raw.githubusercontent.com/kkk287/ctf-platform/main/deploy/doc
 cat > .env <<'EOF'
 APP_IMAGE=ghcr.io/kkk287/ctf-platform:latest
 APP_PORT=8080
-SPRING_PROFILES_ACTIVE=h2
 JWT_SECRET=请替换为至少32字节随机串
-DEMO_SEED_ENABLED=true
+MYSQL_ROOT_PASSWORD=请替换为强密码
+MYSQL_PASSWORD=请替换为强密码
+DEMO_SEED_ENABLED=false
 EOF
-# 生成随机密钥（替换上面的占位值）
+# 生成随机密钥与数据库密码（替换上面的占位值）
 sed -i "s|^JWT_SECRET=.*|JWT_SECRET=$(openssl rand -hex 32)|" .env
+sed -i "s|^MYSQL_ROOT_PASSWORD=.*|MYSQL_ROOT_PASSWORD=$(openssl rand -hex 16)|" .env
+sed -i "s|^MYSQL_PASSWORD=.*|MYSQL_PASSWORD=$(openssl rand -hex 16)|" .env
 docker compose pull
 docker compose up -d
 ```
@@ -179,9 +188,13 @@ docker compose up -d
 |---|---|---|
 | `APP_IMAGE` | 是 | `ghcr.io/kkk287/ctf-platform:latest` 或 `:v1.0.0` |
 | `APP_PORT` | 否 | 宿主机映射端口，默认 `8080` |
-| `SPRING_PROFILES_ACTIVE` | 否 | `h2`（默认）/ `mysql` / `postgres` |
-| `JWT_SECRET` | 生产必填 | ≥32 字节随机串；留空则每次启动生成临时密钥 |
-| `DEMO_SEED_ENABLED` | 否 | 默认 `true`，数据库为空时写入演示数据 |
+| `JWT_SECRET` | 是 | ≥32 字节随机串（compose 强制校验，缺失拒绝启动） |
+| `MYSQL_ROOT_PASSWORD` / `MYSQL_PASSWORD` | 是 | MySQL 初始化密码（compose 强制校验） |
+| `MYSQL_DATABASE` / `MYSQL_USER` | 否 | 默认 `ctf` / `ctf` |
+| `DEMO_SEED_ENABLED` | 否 | 服务器端默认 `false`；数据库为空时是否写入演示数据 |
+| `REDIS_ENABLED` / `MONGO_ENABLED` | 否 | 默认 `true`；JWT 吊销黑名单 / 审计日志镜像 |
+
+> 服务器端编排固定使用 `mysql` profile 并编排 MySQL + Redis + MongoDB；如需 H2 轻量模式请使用方式 A（源码构建）或自行调整 compose 文件。
 
 镜像默认公开（Public）。若为私有包，需先登录：
 
@@ -378,6 +391,7 @@ docker inspect --format '{{json .State.Health}}' ctf-platform
 |---|---|---|---|
 | POST | `/api/auth/register` | 注册（返回 token） | 公开 |
 | POST | `/api/auth/login` | 登录 | 公开 |
+| POST | `/api/auth/logout` | 登出并吊销当前 token（jti 黑名单） | 登录 |
 | GET | `/api/auth/me` | 当前用户 | 登录 |
 | GET | `/api/events` | 赛事 / 练习区列表 | 登录 |
 | GET | `/api/events/{id}` | 赛事详情 | 登录 |
@@ -393,13 +407,15 @@ docker inspect --format '{{json .State.Health}}' ctf-platform
 | POST | `/api/teams` · `/api/teams/join` · `/api/teams/leave` | 战队创建/加入/退出 | USER |
 | GET | `/api/teams/my` | 我的战队 | 登录 |
 | DELETE | `/api/teams/my/members/{userId}` | 队长移除成员 | USER |
-| GET/POST/PUT/DELETE | `/api/admin/challenges...` | 题目管理（含附件、提示） | ADMIN |
-| GET/POST/PUT/DELETE | `/api/admin/events...` | 赛事管理 | ADMIN |
-| GET | `/api/admin/users?keyword=&page=&size=` | 用户分页搜索 | ADMIN |
-| PATCH | `/api/admin/users/{id}/ban` | 封禁 / 解封 | ADMIN |
-| GET | `/api/admin/submissions?...` | 提交审计 | ADMIN |
-| GET | `/api/admin/anomalies` | 异常告警 | ADMIN |
-| GET/POST/PUT/DELETE | `/api/admin/announcements...` | 公告管理 | ADMIN |
+| GET/POST/PUT/DELETE | `/api/admin/challenges...` | 题目管理（含附件、提示） | ADMIN / JUDGE |
+| GET/POST/PUT/DELETE | `/api/admin/events...` | 赛事管理（namespace 全局唯一） | ADMIN / JUDGE |
+| GET | `/api/admin/users?keyword=&page=&size=` | 用户分页搜索 | ADMIN / JUDGE |
+| PATCH | `/api/admin/users/{id}/ban` | 封禁 / 解封 | 仅 ADMIN |
+| PATCH | `/api/admin/users/{id}/role` | 变更用户角色 | 仅 ADMIN |
+| GET | `/api/admin/audit-logs?action=&page=&size=` | 操作审计日志 | ADMIN / JUDGE |
+| GET | `/api/admin/submissions?...` | 提交审计 | ADMIN / JUDGE |
+| GET | `/api/admin/anomalies` | 异常告警 | ADMIN / JUDGE |
+| GET/POST/PUT/DELETE | `/api/admin/announcements...` | 公告管理 | ADMIN / JUDGE |
 
 ## 配置项
 
@@ -417,12 +433,16 @@ docker inspect --format '{{json .State.Health}}' ctf-platform
 | `WRONG_WINDOW_MINUTES` | `5` | 限流统计窗口 |
 | `SUBMIT_COOLDOWN_SECONDS` | `5` | 错误后冷却时间 |
 | `DB_URL` / `DB_USERNAME` / `DB_PASSWORD` | — | MySQL / PostgreSQL profile 使用 |
+| `REDIS_ENABLED` | `false` | 开启后 JWT 吊销黑名单存 Redis（`jwt:revoked:{jti}`）；关闭时用内存实现，重启后吊销列表清空 |
+| `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD` | `127.0.0.1` / `6379` / 空 | Redis 连接参数 |
+| `MONGO_ENABLED` | `false` | 开启后审计日志在事务提交后异步镜像到 MongoDB `op_logs` 集合 |
+| `MONGO_URI` | `mongodb://127.0.0.1:27017/ctf` | MongoDB 连接串 |
 
 完整示例见 `.env.example`。
 
 ## 已知限制
 
-- 不做动态靶机下发：Pwn/Reverse 通过附件 + 题目描述中的外部地址承载，平台不启停靶机。
+- 不做动态靶机下发：Pwn/Reverse 通过附件 + 题目描述中的外部地址承载，平台不启停靶机（已列入 v2.0 路线图 P2，见 [docs/DESIGN.md](docs/DESIGN.md)）。
 - 不做 CTFd 插件/主题生态兼容。
 - 不做 OAuth 第三方登录，仅账号密码 + JWT。
 - 防作弊为基础版：留存 IP/UA 并给出同 IP 多账号告警，不做设备指纹或复杂风控。
@@ -432,6 +452,7 @@ docker inspect --format '{{json .State.Health}}' ctf-platform
 
 | 文档 | 内容 |
 |---|---|
+| [docs/DESIGN.md](docs/DESIGN.md) | v2.0 重构总体设计：需求映射、技术选型、数据模型、分期路线图与 P1 落地状态 |
 | [docs/PLAN.md](docs/PLAN.md) | 需求拆解、状态机、数据模型、接口/页面清单、需求-实现映射 |
 | [docs/DEPLOY.md](docs/DEPLOY.md) | 本地 / Docker / Actions + 服务器部署全流程、Secrets、故障排查 |
 | [docs/DEMO.md](docs/DEMO.md) | 5-8 分钟演示脚本（赛事 + 练习区各走一遍） |

@@ -31,6 +31,13 @@ spring:
       write-dates-as-timestamps: false
   lifecycle:
     timeout-per-shutdown-phase: 20s
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+    mongodb:
+      uri: ${MONGO_URI:mongodb://127.0.0.1:27017/ctf}
 
 management:
   endpoints:
@@ -41,6 +48,12 @@ management:
     health:
       probes:
         enabled: true
+  # Redis / Mongo 健康检查随对应开关联动，默认关闭
+  health:
+    redis:
+      enabled: ${REDIS_ENABLED:false}
+    mongo:
+      enabled: ${MONGO_ENABLED:false}
 
 springdoc:
   swagger-ui:
@@ -64,6 +77,12 @@ app:
   demo:
     # 首次启动且数据库为空时写入演示赛事/题目/解题记录
     enabled: ${DEMO_SEED_ENABLED:true}
+  redis:
+    # 开启后 JWT 吊销黑名单改用 Redis（多实例共享）；默认内存实现
+    enabled: ${REDIS_ENABLED:false}
+  mongo:
+    # 开启后审计日志同步镜像到 MongoDB 的 op_logs 集合
+    enabled: ${MONGO_ENABLED:false}
 
 logging:
   level:

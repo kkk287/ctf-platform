@@ -1,18 +1,76 @@
 # 本地 / 单机部署：docker compose up -d --build
+# 默认编排 MySQL + Redis + MongoDB 全家桶；轻量体验可设 SPRING_PROFILES_ACTIVE=h2、REDIS_ENABLED=false、MONGO_ENABLED=false
 # 服务器部署使用 deploy/docker-compose.server.yml（直接拉取 GHCR 镜像）
 services:
+  mysql:
+    image: mysql:8.0
+    container_name: ctf-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-ctf-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-ctf}
+      MYSQL_USER: ${MYSQL_USER:-ctf}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-ctf}
+      TZ: Asia/Shanghai
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u$${MYSQL_USER} -p$${MYSQL_PASSWORD} --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  redis:
+    image: redis:7-alpine
+    container_name: ctf-redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  mongo:
+    image: mongo:6
+    container_name: ctf-mongo
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval 'db.runCommand({ping:1}).ok' | grep 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
   ctf:
     build:
       context: .
     image: ${APP_IMAGE:-ctf-platform:local}
     container_name: ctf-platform
     restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
     ports:
       - "${APP_PORT:-8080}:8080"
     environment:
-      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-h2}
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-mysql}
+      DB_URL: ${DB_URL:-jdbc:mysql://mysql:3306/ctf?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false}
+      DB_USERNAME: ${MYSQL_USER:-ctf}
+      DB_PASSWORD: ${MYSQL_PASSWORD:-ctf}
       JWT_SECRET: ${JWT_SECRET:-}
       DEMO_SEED_ENABLED: ${DEMO_SEED_ENABLED:-true}
+      REDIS_ENABLED: ${REDIS_ENABLED:-true}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      MONGO_ENABLED: ${MONGO_ENABLED:-true}
+      MONGO_URI: ${MONGO_URI:-mongodb://mongo:27017/ctf}
       UPLOAD_DIR: /app/data/uploads
       TZ: Asia/Shanghai
     volumes:
@@ -22,8 +80,12 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 45s
+      start_period: 60s
 
 volumes:
   ctf-data:
     name: ctf-platform-data
+  mysql-data:
+    name: ctf-platform-mysql
+  mongo-data:
+    name: ctf-platform-mongo

@@ -21,11 +21,14 @@ public class EventService {
     private final EventRepository eventRepository;
     private final ChallengeRepository challengeRepository;
     private final DtoMapper mapper;
+    private final AuditService auditService;
 
-    public EventService(EventRepository eventRepository, ChallengeRepository challengeRepository, DtoMapper mapper) {
+    public EventService(EventRepository eventRepository, ChallengeRepository challengeRepository,
+                        DtoMapper mapper, AuditService auditService) {
         this.eventRepository = eventRepository;
         this.challengeRepository = challengeRepository;
         this.mapper = mapper;
+        this.auditService = auditService;
     }
 
     public static EventStatus statusOf(Event event) {
@@ -115,6 +118,7 @@ public class EventService {
         Event event = new Event();
         apply(event, request);
         eventRepository.save(event);
+        auditService.record("EVENT_CREATE", event.getName(), "命名空间 " + event.getNamespace());
         return toDto(event);
     }
 
@@ -123,6 +127,7 @@ public class EventService {
         Event event = requireEvent(id);
         apply(event, request);
         eventRepository.save(event);
+        auditService.record("EVENT_UPDATE", event.getName(), "命名空间 " + event.getNamespace());
         return toDto(event);
     }
 
@@ -133,9 +138,20 @@ public class EventService {
             throw new BusinessException(ErrorCode.INVALID_STATE, "请先删除该赛事下的所有题目");
         }
         eventRepository.delete(event);
+        auditService.record("EVENT_DELETE", event.getName(), "命名空间 " + event.getNamespace());
     }
 
     private void apply(Event event, EventDtos.EventRequest request) {
+        if (request.namespace() != null && !request.namespace().isBlank()) {
+            String namespace = request.namespace().trim().toLowerCase();
+            boolean conflict = event.getId() == null
+                    ? eventRepository.existsByNamespace(namespace)
+                    : eventRepository.existsByNamespaceAndIdNot(namespace, event.getId());
+            if (conflict) {
+                throw new BusinessException(ErrorCode.DUPLICATE, "命名空间已被占用");
+            }
+            event.setNamespace(namespace);
+        }
         event.setName(request.name().trim());
         event.setDescription(request.description());
         event.setType(request.type());

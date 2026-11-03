@@ -21,9 +21,9 @@ public class DtoMapper {
 
     public EventDtos.EventDto eventDto(Event event, long challengeCount, long visibleChallengeCount) {
         var status = EventService.statusOf(event);
-        return new EventDtos.EventDto(event.getId(), event.getName(), event.getDescription(), event.getType(),
-                event.getType().label(), status.name(), status.label(), event.getStartAt(), event.getEndAt(),
-                challengeCount, visibleChallengeCount, event.getCreatedAt());
+        return new EventDtos.EventDto(event.getId(), event.getNamespace(), event.getName(), event.getDescription(),
+                event.getType(), event.getType().label(), status.name(), status.label(), event.getStartAt(),
+                event.getEndAt(), challengeCount, visibleChallengeCount, event.getCreatedAt());
     }
 
     public ScoreboardDtos.AnnouncementDto announcementDto(Announcement announcement) {
@@ -32,6 +32,12 @@ public class DtoMapper {
     }
 
     public String roleLabel(Role role) {
-        return role == Role.ADMIN ? "管理员" : "选手";
+        return switch (role) {
+            case ADMIN -> "管理员";
+            case JUDGE -> "裁判";
+            case TEACHER -> "教师";
+            case OBSERVER -> "观摩";
+            case USER -> "选手";
+        };
     }
 }

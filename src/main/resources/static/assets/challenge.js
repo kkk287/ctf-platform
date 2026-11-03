@@ -128,6 +128,11 @@
       result.innerHTML = '';
       return;
     }
+    if (WO.getUser() && WO.getUser().role === 'OBSERVER') {
+      area.innerHTML = `<div class="result-box result-bad">观摩账号仅可浏览，不可参与答题。</div>`;
+      result.innerHTML = '';
+      return;
+    }
 
     area.innerHTML = `
       <form id="submit-form">

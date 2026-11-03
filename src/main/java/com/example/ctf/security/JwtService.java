@@ -16,6 +16,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Date;
+import java.util.UUID;
 
 @Service
 public class JwtService {
@@ -44,6 +45,8 @@ public class JwtService {
     public String createToken(User user) {
         Instant now = Instant.now();
         return Jwts.builder()
+                // jti 用于登出吊销：黑名单按 jti 记录
+                .id(UUID.randomUUID().toString())
                 .subject(user.getUsername())
                 .claim("uid", user.getId())
                 .claim("role", user.getRole().name())
@@ -55,6 +58,17 @@ public class JwtService {
 
     public Claims parse(String token) throws JwtException {
         return Jwts.parser().verifyWith(key).build().parseSignedClaims(token).getPayload();
+    }
+
+    /**
+     * 令牌剩余有效秒数，登出吊销时作为黑名单记录的 TTL。
+     */
+    public long remainingSeconds(Claims claims) {
+        Date expiration = claims.getExpiration();
+        if (expiration == null) {
+            return 0;
+        }
+        return Math.max(0, (expiration.getTime() - System.currentTimeMillis()) / 1000);
     }
 
     public long expiresInSeconds() {

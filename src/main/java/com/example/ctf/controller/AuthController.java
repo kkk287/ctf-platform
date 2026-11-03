@@ -28,6 +28,15 @@ public class AuthController {
         return ApiResponse.ok(authService.register(request));
     }
 
+    /**
+     * 登出：吊销当前 Bearer 令牌，令牌在剩余有效期内立即失效。
+     */
+    @PostMapping("/logout")
+    public ApiResponse<Void> logout(@RequestHeader(value = "Authorization", required = false) String authorization) {
+        authService.logout(authorization);
+        return ApiResponse.ok();
+    }
+
     @GetMapping("/me")
     public ApiResponse<AuthDtos.UserDto> me(@AuthenticationPrincipal UserPrincipal principal) {
         return ApiResponse.ok(authService.me(principal));

@@ -33,6 +33,7 @@ public class ChallengeService {
     private final DtoMapper mapper;
     private final AuthService authService;
     private final ScoreboardService scoreboardService;
+    private final AuditService auditService;
 
     @Value("${app.submission.max-wrong-attempts:5}")
     private int maxWrongAttempts;
@@ -47,7 +48,8 @@ public class ChallengeService {
                             HintUnlockRepository hintUnlockRepository, SolveRepository solveRepository,
                             SubmissionRepository submissionRepository, EventService eventService,
                             FileStorageService fileStorageService, FlagHasher flagHasher, DtoMapper mapper,
-                            AuthService authService, ScoreboardService scoreboardService) {
+                            AuthService authService, ScoreboardService scoreboardService,
+                            AuditService auditService) {
         this.challengeRepository = challengeRepository;
         this.hintRepository = hintRepository;
         this.hintUnlockRepository = hintUnlockRepository;
@@ -59,6 +61,7 @@ public class ChallengeService {
         this.mapper = mapper;
         this.authService = authService;
         this.scoreboardService = scoreboardService;
+        this.auditService = auditService;
     }
 
     @Transactional(readOnly = true)
@@ -139,6 +142,9 @@ public class ChallengeService {
     @Transactional(noRollbackFor = BusinessException.class)
     public ChallengeDtos.SubmitResponse submit(String challengeId, String flag, String ip, String userAgent,
                                                UserPrincipal principal) {
+        if (principal.getRole() == Role.OBSERVER) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "观摩账号仅可浏览，不可参与答题");
+        }
         Challenge challenge = challengeRepository.findForUpdate(challengeId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "题目不存在"));
         User user = authService.requireUser(principal.getId());
@@ -216,6 +222,9 @@ public class ChallengeService {
 
     @Transactional
     public ChallengeDtos.UnlockHintResponse unlockHint(String challengeId, String hintId, UserPrincipal principal) {
+        if (principal.getRole() == Role.OBSERVER) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "观摩账号仅可浏览，不可解锁提示");
+        }
         Challenge challenge = requireAccessible(challengeId, principal);
         Hint hint = hintRepository.findById(hintId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "提示不存在"));
@@ -256,6 +265,8 @@ public class ChallengeService {
         challenge.setFlagSalt(salt);
         challenge.setFlagHash(flagHasher.hash(request.flag(), salt));
         challengeRepository.save(challenge);
+        auditService.record("CHALLENGE_CREATE", challenge.getName(),
+                "赛事 " + challenge.getEvent().getName());
         return adminDto(challenge);
     }
 
@@ -270,6 +281,8 @@ public class ChallengeService {
             challenge.setFlagHash(flagHasher.hash(request.flag(), salt));
         }
         challengeRepository.save(challenge);
+        auditService.record("CHALLENGE_UPDATE", challenge.getName(),
+                "赛事 " + challenge.getEvent().getName());
         return adminDto(challenge);
     }
 
@@ -278,6 +291,7 @@ public class ChallengeService {
         Challenge challenge = requireChallenge(id);
         fileStorageService.deleteQuietly(challenge.getAttachmentStoredName());
         challengeRepository.delete(challenge);
+        auditService.record("CHALLENGE_DELETE", challenge.getName(), null);
     }
 
     @Transactional
@@ -290,6 +304,7 @@ public class ChallengeService {
         challenge.setAttachmentContentType(stored.contentType());
         challenge.setAttachmentSize(stored.size());
         challengeRepository.save(challenge);
+        auditService.record("CHALLENGE_ATTACHMENT_UPLOAD", challenge.getName(), stored.originalName());
         return adminDto(challenge);
     }
 
@@ -302,6 +317,7 @@ public class ChallengeService {
         challenge.setAttachmentContentType(null);
         challenge.setAttachmentSize(null);
         challengeRepository.save(challenge);
+        auditService.record("CHALLENGE_ATTACHMENT_DELETE", challenge.getName(), null);
         return adminDto(challenge);
     }
 
@@ -313,6 +329,7 @@ public class ChallengeService {
         hint.setContent(request.content().trim());
         hint.setCost(request.cost());
         hintRepository.save(hint);
+        auditService.record("HINT_CREATE", challenge.getName(), "扣分 " + hint.getCost());
         return new ChallengeDtos.HintDto(hint.getId(), hint.getContent(), hint.getCost(), false);
     }
 
@@ -322,13 +339,16 @@ public class ChallengeService {
         hint.setContent(request.content().trim());
         hint.setCost(request.cost());
         hintRepository.save(hint);
+        auditService.record("HINT_UPDATE", hint.getChallenge().getName(), "扣分 " + hint.getCost());
         return new ChallengeDtos.HintDto(hint.getId(), hint.getContent(), hint.getCost(), false);
     }
 
     @Transactional
     public void deleteHint(String challengeId, String hintId) {
         Hint hint = requireHint(challengeId, hintId);
+        String challengeName = hint.getChallenge().getName();
         hintRepository.delete(hint);
+        auditService.record("HINT_DELETE", challengeName, null);
     }
 
     private Hint requireHint(String challengeId, String hintId) {

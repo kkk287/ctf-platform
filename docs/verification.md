@@ -4,6 +4,8 @@
 > 验证环境：Windows 11（PowerShell 7.6），Temurin JDK 17.0.20.1（便携目录），Maven Wrapper 3.9.9。
 > 结论：**`mvnw test` 全绿（10/10）；JAR 启动成功；端到端脚本 20/20 项通过；Docker 构建、健康检查、重启自恢复与数据卷持久化均已本机验证。**
 > GitHub Actions 的 SSH 部署与公网服务器访问需用户在真实服务器核验（本机无可用的公网目标）。
+>
+> **2026-11-03 追加**：P1 基础底座升级已完成并验证（13/13 测试全绿），详见第 10 节。
 
 ## 1. 测试结果
 
@@ -184,3 +186,53 @@ docker compose up -d --build
 - 不做 CTFd 插件兼容与 OAuth。
 - 防作弊为"IP/UA 留存 + 同题同 IP 多账号告警"的基础版。
 - 前端面向桌面（≥1280px），未做移动端专项适配。
+
+## 10. P1 基础底座升级验证（2026-11-03）
+
+> 对应 [DESIGN.md](DESIGN.md) 第 11 节。范围：角色体系、赛事命名空间、审计日志（MySQL + MongoDB 镜像）、JWT 吊销与登出、Compose 全家桶（MySQL 默认 + Redis + MongoDB）。
+
+### 10.1 测试结果
+
+命令同第 1 节（`mvnw -B clean test`）。结果：
+
+```
+[INFO] Running com.example.ctf.integration.CtfFlowIntegrationTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Running com.example.ctf.integration.SecurityUpgradeIntegrationTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Running com.example.ctf.service.FlagHasherTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Running com.example.ctf.service.ScoringPolicyTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Results:
+[INFO] Tests run: 13, Failures: 0, Errors: 0, Skipped: 0
+[INFO] BUILD SUCCESS
+```
+
+新增 `SecurityUpgradeIntegrationTest` 3 个用例：
+
+| 用例 | 断言要点 |
+|---|---|
+| 审计落库 + 命名空间唯一 | 管理端建赛后 `audit_logs` 落对应记录；同 namespace 二次建赛返回 4090（DUPLICATE） |
+| OBSERVER 只读 + 角色变更审计 | OBSERVER 提交 flag 返回 4030；`PATCH /api/admin/users/{id}/role` 仅 ADMIN 可用且落审计 |
+| logout 吊销 | `POST /api/auth/logout` 后原 token 访问受保护接口返回 401 |
+
+### 10.2 端点与权限验证摘要
+
+| 验证项 | 方法 | 结果 |
+|---|---|---|
+| 角色扩展 USER/JUDGE/TEACHER/OBSERVER/ADMIN | 集成测试 + SecurityConfig 规则 | `/api/admin/**` 对 USER/OBSERVER 返回 4030，对 ADMIN/JUDGE 放行 |
+| 封禁与角色变更仅 ADMIN | 集成测试 | JUDGE 调用返回 4030 |
+| 赛事 namespace 唯一约束 | 集成测试（V3 迁移生效） | 重复 namespace 返回 4090 |
+| 审计查询端点 | `GET /api/admin/audit-logs?action=&page=&size=` | action 精确过滤 + 分页正常 |
+| JWT jti 吊销 | logout 后重放原 token | 401 |
+| Redis/Mongo 缺省关闭 | 默认配置启动 | 应用正常启动（内存 TokenRegistry，无 Mongo 镜像） |
+| 前端配套 | 代码审查 | admin 角色下拉/namespace 表单/审计日志 tab；challenge.js 对 OBSERVER 隐藏提交区；common.js 登出调 `/api/auth/logout` |
+
+### 10.3 未在本机验证项
+
+| 项目 | 原因 / 核验方式 |
+|---|---|
+| MySQL/Redis/Mongo 实库联通 | 本机未起容器；compose 全家桶已配置 healthcheck + depends_on，需服务器 `docker compose up -d --build` 后核验（README 方式 A） |
+| RedisTokenRegistry 实 Redis 行为 | 缺省内存实现已测；`REDIS_ENABLED=true` 路径需连真实 Redis 复核（键 `jwt:revoked:{jti}` TTL） |
+| MongoAuditMirror 镜像写入 | `@ConditionalOnProperty(app.mongo.enabled)` 缺省关闭；开启后检查 `op_logs` 集合 |

@@ -182,7 +182,8 @@
     const user = requireAuth();
     const topbar = document.getElementById('topbar');
     if (!topbar) return user;
-    const admin = user.role === 'ADMIN';
+    const staff = user.role === 'ADMIN' || user.role === 'JUDGE';
+    const ROLE_LABEL = { ADMIN: '管理员', JUDGE: '裁判', TEACHER: '教师', OBSERVER: '观摩' };
     topbar.innerHTML = `
       <a class="brand" href="/index.html">
         <span class="brand-mark">./ctf</span>
@@ -192,18 +193,21 @@
         <a href="/index.html" class="${active === 'challenges' ? 'active' : ''}">题目</a>
         <a href="/scoreboard.html" class="${active === 'scoreboard' ? 'active' : ''}">排行榜</a>
         <a href="/profile.html" class="${active === 'profile' ? 'active' : ''}">我的战绩</a>
-        ${admin ? `<a href="/admin.html" class="${active === 'admin' ? 'active' : ''}">管理后台</a>` : ''}
+        ${staff ? `<a href="/admin.html" class="${active === 'admin' ? 'active' : ''}">管理后台</a>` : ''}
       </nav>
       <div class="user-chip">
         <div class="avatar">${escapeHtml(user.displayName ? user.displayName.slice(0, 2) : user.username.slice(0, 2))}</div>
         <div class="who">
           <strong>${escapeHtml(user.displayName)}</strong>
-          <span>${escapeHtml(user.teamName || (admin ? '管理员' : '未加入战队'))}</span>
+          <span>${escapeHtml(user.teamName || ROLE_LABEL[user.role] || '未加入战队')}</span>
         </div>
         <button class="icon-btn" id="logout-btn">退出</button>
       </div>`;
     const logout = document.getElementById('logout-btn');
-    if (logout) logout.addEventListener('click', () => {
+    if (logout) logout.addEventListener('click', async () => {
+      try {
+        await api('/auth/logout', { method: 'POST', authRedirect: false });
+      } catch (e) { /* 服务端吊销失败不阻塞本地登出 */ }
       clearSession();
       window.location.href = '/login.html';
     });

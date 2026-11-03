@@ -15,7 +15,7 @@
   <div class="page-head">
     <div>
       <h1 class="page-title"><span class="hash">#</span>管理后台</h1>
-      <p class="page-sub">题目与赛事管理、用户封禁、提交审计、异常告警与公告。仅 ADMIN 可访问接口。</p>
+      <p class="page-sub">题目与赛事管理、用户与角色、提交审计、审计日志、异常告警与公告。管理接口限定 ADMIN / JUDGE，敏感操作仅 ADMIN。</p>
     </div>
   </div>
 
@@ -24,6 +24,7 @@
     <button type="button" data-tab="events">赛事/练习</button>
     <button type="button" data-tab="users">用户</button>
     <button type="button" data-tab="submissions">提交审计</button>
+    <button type="button" data-tab="audit">审计日志</button>
     <button type="button" data-tab="anomalies">异常告警</button>
     <button type="button" data-tab="announcements">公告</button>
   </div>
@@ -35,7 +36,7 @@
 
 <div class="page-footer">
   <span>CTF PLATFORM · ADMIN</span>
-  <span>所有管理接口 /api/admin/** 由 Spring Security 强制 ADMIN 角色校验</span>
+  <span>所有管理接口 /api/admin/** 由 Spring Security 强制 ADMIN / JUDGE 角色校验</span>
 </div>
 
 <div class="modal-mask" id="modal-mask">

@@ -7,6 +7,7 @@ import com.example.ctf.domain.*;
 import com.example.ctf.dto.AdminDtos;
 import com.example.ctf.dto.ScoreboardDtos;
 import com.example.ctf.repository.AnnouncementRepository;
+import com.example.ctf.repository.AuditLogRepository;
 import com.example.ctf.repository.SolveRepository;
 import com.example.ctf.repository.SubmissionRepository;
 import com.example.ctf.repository.UserRepository;
@@ -31,18 +32,23 @@ public class AdminService {
     private final SubmissionRepository submissionRepository;
     private final SolveRepository solveRepository;
     private final AnnouncementRepository announcementRepository;
+    private final AuditLogRepository auditLogRepository;
     private final AuthService authService;
     private final DtoMapper mapper;
+    private final AuditService auditService;
 
     public AdminService(UserRepository userRepository, SubmissionRepository submissionRepository,
                         SolveRepository solveRepository, AnnouncementRepository announcementRepository,
-                        AuthService authService, DtoMapper mapper) {
+                        AuditLogRepository auditLogRepository, AuthService authService, DtoMapper mapper,
+                        AuditService auditService) {
         this.userRepository = userRepository;
         this.submissionRepository = submissionRepository;
         this.solveRepository = solveRepository;
         this.announcementRepository = announcementRepository;
+        this.auditLogRepository = auditLogRepository;
         this.authService = authService;
         this.mapper = mapper;
+        this.auditService = auditService;
     }
 
     @Transactional(readOnly = true)
@@ -67,7 +73,43 @@ public class AdminService {
         }
         user.setBanned(banned);
         userRepository.save(user);
+        auditService.record(banned ? "USER_BAN" : "USER_UNBAN", user.getUsername(), null);
         return adminUserDto(user);
+    }
+
+    /**
+     * 变更用户角色（仅 ADMIN）。保护规则：不能改自己；不能把管理员降级，避免平台失去管理入口。
+     */
+    @Transactional
+    public AdminDtos.AdminUserDto updateRole(String operatorId, String userId, Role role) {
+        if (operatorId.equals(userId)) {
+            throw new BusinessException(ErrorCode.INVALID_STATE, "不能修改自己的角色");
+        }
+        User user = authService.requireUser(userId);
+        if (user.getRole() == Role.ADMIN && role != Role.ADMIN) {
+            throw new BusinessException(ErrorCode.INVALID_STATE, "不能降级管理员账号");
+        }
+        Role old = user.getRole();
+        if (old != role) {
+            user.setRole(role);
+            userRepository.save(user);
+            auditService.record("USER_ROLE_CHANGE", user.getUsername(),
+                    "角色由 " + old.name() + " 变更为 " + role.name());
+        }
+        return adminUserDto(user);
+    }
+
+    @Transactional(readOnly = true)
+    public PageResult<AdminDtos.AuditLogDto> auditLogs(int page, int size, String action) {
+        Specification<AuditLog> spec = (root, query, cb) -> action == null || action.isBlank()
+                ? cb.conjunction()
+                : cb.equal(root.get("action"), action.trim());
+        PageRequest pageable = PageRequest.of(Math.max(0, page), clamp(size),
+                Sort.by(Sort.Direction.DESC, "createdAt"));
+        Page<AuditLog> result = auditLogRepository.findAll(spec, pageable);
+        return PageResult.from(result.map(log -> new AdminDtos.AuditLogDto(log.getId(), log.getActorName(),
+                log.getActorRole(), log.getAction(), log.getTarget(), log.getDetail(), log.getIp(),
+                log.getCreatedAt())));
     }
 
     @Transactional(readOnly = true)
@@ -143,6 +185,7 @@ public class AdminService {
         announcement.setContent(request.content().trim());
         announcement.setCreatedBy(authService.requireUser(userId));
         announcementRepository.save(announcement);
+        auditService.record("ANNOUNCEMENT_CREATE", announcement.getTitle(), null);
         return mapper.announcementDto(announcement);
     }
 
@@ -153,6 +196,7 @@ public class AdminService {
         announcement.setTitle(request.title().trim());
         announcement.setContent(request.content().trim());
         announcementRepository.save(announcement);
+        auditService.record("ANNOUNCEMENT_UPDATE", announcement.getTitle(), null);
         return mapper.announcementDto(announcement);
     }
 
@@ -161,6 +205,7 @@ public class AdminService {
         Announcement announcement = announcementRepository.findById(id)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "公告不存在"));
         announcementRepository.delete(announcement);
+        auditService.record("ANNOUNCEMENT_DELETE", announcement.getTitle(), null);
     }
 
     private AdminDtos.AdminUserDto adminUserDto(User user) {

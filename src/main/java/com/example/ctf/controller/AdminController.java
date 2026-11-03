@@ -21,7 +21,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/admin")
-@PreAuthorize("hasRole('ADMIN')")
+@PreAuthorize("hasAnyRole('ADMIN','JUDGE')")
 public class AdminController {
 
     private final ChallengeService challengeService;
@@ -119,10 +119,27 @@ public class AdminController {
     }
 
     @PatchMapping("/users/{id}/ban")
+    @PreAuthorize("hasRole('ADMIN')")
     public ApiResponse<AdminDtos.AdminUserDto> ban(
             @AuthenticationPrincipal UserPrincipal principal, @PathVariable String id,
             @RequestBody AdminDtos.BanRequest request) {
         return ApiResponse.ok(adminService.ban(principal.getId(), id, request.banned()));
+    }
+
+    @PatchMapping("/users/{id}/role")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ApiResponse<AdminDtos.AdminUserDto> updateRole(
+            @AuthenticationPrincipal UserPrincipal principal, @PathVariable String id,
+            @Valid @RequestBody AdminDtos.RoleUpdateRequest request) {
+        return ApiResponse.ok(adminService.updateRole(principal.getId(), id, request.role()));
+    }
+
+    @GetMapping("/audit-logs")
+    public ApiResponse<PageResult<AdminDtos.AuditLogDto>> auditLogs(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) String action) {
+        return ApiResponse.ok(adminService.auditLogs(page, size, action));
     }
 
     @GetMapping("/submissions")

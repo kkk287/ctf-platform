@@ -1,4 +1,4 @@
-/* 管理后台：题目/赛事/用户/提交审计/异常/公告 */
+/* 管理后台：题目/赛事/用户与角色/提交审计/审计日志/异常/公告 */
 (function () {
   const user = WO.renderHeader('admin');
   const tabs = document.getElementById('admin-tabs');
@@ -9,6 +9,7 @@
   const modalFoot = document.getElementById('modal-foot');
   const CATEGORIES = [['WEB', 'Web'], ['PWN', 'Pwn'], ['CRYPTO', 'Crypto'], ['MISC', 'Misc'], ['REVERSE', 'Reverse']];
   const DIFFICULTIES = [['EASY', '简单'], ['MEDIUM', '中等'], ['HARD', '困难']];
+  const ROLES = [['USER', '选手'], ['JUDGE', '裁判'], ['TEACHER', '教师'], ['OBSERVER', '观摩'], ['ADMIN', '管理员']];
 
   let currentTab = 'challenges';
   let eventsCache = [];
@@ -16,10 +17,13 @@
   let userKeyword = '';
   let subPage = 0;
   let subResult = '';
+  let auditPage = 0;
+  let auditAction = '';
 
-  if (!user || user.role !== 'ADMIN') {
+  const isAdmin = user && user.role === 'ADMIN';
+  if (!user || (user.role !== 'ADMIN' && user.role !== 'JUDGE')) {
     tabs.style.display = 'none';
-    content.innerHTML = `<div class="empty">当前账号不是管理员，无法访问管理后台。<br>
+    content.innerHTML = `<div class="empty">管理后台仅对管理员 / 裁判开放。<br>
       <a href="/index.html" style="display:inline-block;margin-top:10px">返回题目列表</a></div>`;
     return;
   }
@@ -368,7 +372,8 @@
             <tbody>${list.map(e => `
               <tr>
                 <td><div style="font-weight:600">${WO.escapeHtml(e.name)}</div>
-                  <div class="muted small">${WO.escapeHtml(e.description || '')}</div></td>
+                  <div class="muted small">${WO.escapeHtml(e.description || '')}</div>
+                  <div class="muted small mono">ns: ${WO.escapeHtml(e.namespace || '—')}</div></td>
                 <td>${WO.badge(e.typeLabel, WO.eventTypeClass(e.type))}</td>
                 <td>${WO.badge(e.statusLabel, WO.eventStatusClass(e.status))}</td>
                 <td class="small mono">${e.type === 'PRACTICE' ? '长期开放'
@@ -409,6 +414,10 @@
     openModal(isEdit ? '编辑赛事/练习区' : '新建赛事/练习区', `
       <div class="field"><label>名称</label>
         <input class="input" id="ev-name" maxlength="80" value="${WO.escapeHtml(e.name || '')}"></div>
+      <div class="field"><label>命名空间（可选）</label>
+        <input class="input mono" id="ev-namespace" maxlength="60" placeholder="留空默认与赛事 ID 相同"
+               value="${WO.escapeHtml(e.namespace || '')}">
+        <div class="hint">小写字母 / 数字 / 中划线，全平台唯一；用于动态靶机等外部系统对接，创建后不建议修改。</div></div>
       <div class="field"><label>类型</label>
         <select class="select" id="ev-type">
           <option value="COMPETITION" ${e.type === 'PRACTICE' ? '' : 'selected'}>赛事 COMPETITION（限时）</option>
@@ -442,8 +451,13 @@
 
     document.getElementById('modal-save').addEventListener('click', async () => {
       const type = typeSelect.value;
+      const ns = document.getElementById('ev-namespace').value.trim();
+      if (ns && !/^[a-z0-9][a-z0-9-]{1,59}$/.test(ns)) {
+        return WO.toast('命名空间需以小写字母或数字开头，仅含小写字母/数字/中划线，长度 2-60', 'error');
+      }
       const payload = {
         name: document.getElementById('ev-name').value.trim(),
+        namespace: ns || null,
         description: document.getElementById('ev-description').value,
         type,
         startAt: type === 'PRACTICE' ? null : document.getElementById('ev-start').value,
@@ -497,13 +511,18 @@
             <tr>
               <td><div style="font-weight:600">${WO.escapeHtml(u.displayName)}</div>
                 <div class="muted small mono">@${WO.escapeHtml(u.username)}</div></td>
-              <td>${WO.badge(u.roleLabel, u.role === 'ADMIN' ? 'badge-purple' : 'badge-cyan')}</td>
+              <td>${isAdmin && u.role !== 'ADMIN' && u.id !== user.id
+          ? `<select class="select" style="width:auto;padding:4px 10px" data-role="${WO.escapeHtml(u.id)}">
+              ${ROLES.map(([v, l]) => `<option value="${v}" ${u.role === v ? 'selected' : ''}>${l}</option>`).join('')}
+            </select>`
+          : WO.badge(u.roleLabel, u.role === 'ADMIN' ? 'badge-purple' : 'badge-cyan')}</td>
               <td class="small">${WO.escapeHtml(u.teamName || '—')}</td>
               <td class="mono">${u.solveCount}</td>
               <td class="mono">${u.totalPoints}</td>
               <td class="muted small">${WO.formatDate(u.createdAt)}</td>
               <td>${u.banned ? WO.badge('已封禁', 'badge-red') : WO.badge('正常', 'badge-green')}</td>
-              <td>${u.role === 'ADMIN' ? '<span class="muted small">管理员</span>'
+              <td>${!isAdmin ? '<span class="muted small">仅管理员可操作</span>'
+          : u.role === 'ADMIN' ? '<span class="muted small">管理员</span>'
           : `<button class="btn btn-sm ${u.banned ? '' : 'btn-danger'}" type="button" data-ban="${WO.escapeHtml(u.id)}" data-banned="${u.banned}">
                   ${u.banned ? '解封' : '封禁'}</button>`}</td>
             </tr>`).join('')}</tbody>
@@ -522,6 +541,25 @@
           } catch (err) {
             WO.toast(err.message, 'error');
           }
+        });
+      });
+      document.getElementById('user-table').querySelectorAll('select[data-role]').forEach(sel => {
+        sel.addEventListener('change', async () => {
+          const found = ROLES.find(([v]) => v === sel.value);
+          const label = found ? found[1] : sel.value;
+          if (!window.confirm('确认将该用户的角色调整为「' + label + '」？')) {
+            renderUsers();
+            return;
+          }
+          try {
+            await WO.api('/admin/users/' + encodeURIComponent(sel.dataset.role) + '/role', {
+              method: 'PATCH', body: { role: sel.value }
+            });
+            WO.toast('角色已更新', 'success');
+          } catch (err) {
+            WO.toast(err.message, 'error');
+          }
+          renderUsers();
         });
       });
     } catch (err) {
@@ -696,6 +734,68 @@
     });
   }
 
+  // ---------- 审计日志 ----------
+
+  const AUDIT_ACTIONS = [
+    ['USER_BAN', '用户封禁'], ['USER_UNBAN', '用户解封'], ['USER_ROLE_CHANGE', '角色调整'],
+    ['EVENT_CREATE', '赛事创建'], ['EVENT_UPDATE', '赛事更新'], ['EVENT_DELETE', '赛事删除'],
+    ['CHALLENGE_CREATE', '题目创建'], ['CHALLENGE_UPDATE', '题目更新'], ['CHALLENGE_DELETE', '题目删除'],
+    ['HINT_CREATE', '提示创建'], ['HINT_UPDATE', '提示更新'], ['HINT_DELETE', '提示删除'],
+    ['ANNOUNCEMENT_CREATE', '公告发布'], ['ANNOUNCEMENT_UPDATE', '公告更新'], ['ANNOUNCEMENT_DELETE', '公告删除']
+  ];
+
+  function actionLabel(action) {
+    const found = AUDIT_ACTIONS.find(([v]) => v === action);
+    return found ? found[1] : action;
+  }
+
+  async function renderAuditLogs() {
+    content.innerHTML = `
+      <div class="toolbar" style="margin-top:0">
+        <select class="select" id="audit-action" style="width:auto">
+          <option value="">全部操作</option>
+          ${AUDIT_ACTIONS.map(([v, l]) => `<option value="${v}" ${auditAction === v ? 'selected' : ''}>${l}</option>`).join('')}
+        </select>
+        <button class="btn btn-sm" id="audit-refresh" type="button">刷新</button>
+        <div class="spacer"></div>
+        <span class="muted small">管理端关键操作留痕；MONGO_ENABLED=true 时同步镜像到 MongoDB op_logs</span>
+      </div>
+      <div id="audit-table"><div class="loading">加载审计日志</div></div>
+      <div class="pagination" id="audit-pager"></div>`;
+    document.getElementById('audit-action').addEventListener('change', e => {
+      auditAction = e.target.value;
+      auditPage = 0;
+      renderAuditLogs();
+    });
+    document.getElementById('audit-refresh').addEventListener('click', renderAuditLogs);
+    try {
+      const result = await WO.api('/admin/audit-logs?page=' + auditPage + '&size=20'
+          + (auditAction ? '&action=' + encodeURIComponent(auditAction) : ''));
+      if (!result.items.length) {
+        document.getElementById('audit-table').innerHTML = '<div class="empty">暂无审计日志。</div>';
+        return;
+      }
+      document.getElementById('audit-table').innerHTML = `
+        <div class="table-wrap"><table class="data">
+          <thead><tr><th>时间</th><th>操作</th><th>操作者</th><th>对象</th><th>详情</th><th>IP</th></tr></thead>
+          <tbody>${result.items.map(a => `
+            <tr>
+              <td class="muted small nowrap">${WO.formatDate(a.createdAt, true)}</td>
+              <td>${WO.badge(actionLabel(a.action), 'badge-cyan')}</td>
+              <td class="small">${WO.escapeHtml(a.actorName || 'system')}
+                <span class="muted small">${WO.escapeHtml(a.actorRole || '')}</span></td>
+              <td class="small mono">${WO.escapeHtml(a.target || '—')}</td>
+              <td class="small" style="max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+                  title="${WO.escapeHtml(a.detail || '')}">${WO.escapeHtml(a.detail || '—')}</td>
+              <td class="mono small">${WO.escapeHtml(a.ip || '—')}</td>
+            </tr>`).join('')}</tbody>
+        </table></div>`;
+      pager(document.getElementById('audit-pager'), result, page => { auditPage = page; renderAuditLogs(); });
+    } catch (err) {
+      document.getElementById('audit-table').innerHTML = `<div class="empty">${WO.escapeHtml(err.message)}</div>`;
+    }
+  }
+
   // ---------- 切换 ----------
 
   function renderTab(tab) {
@@ -703,6 +803,7 @@
     else if (tab === 'events') renderEvents();
     else if (tab === 'users') renderUsers();
     else if (tab === 'submissions') renderSubmissions();
+    else if (tab === 'audit') renderAuditLogs();
     else if (tab === 'anomalies') renderAnomalies();
     else if (tab === 'announcements') renderAnnouncements();
   }

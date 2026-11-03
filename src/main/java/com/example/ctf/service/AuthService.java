@@ -7,7 +7,10 @@ import com.example.ctf.domain.User;
 import com.example.ctf.dto.AuthDtos;
 import com.example.ctf.repository.UserRepository;
 import com.example.ctf.security.JwtService;
+import com.example.ctf.security.TokenRegistry;
 import com.example.ctf.security.UserPrincipal;
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.JwtException;
 import org.springframework.security.authentication.AccountStatusException;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -23,14 +26,17 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
     private final JwtService jwtService;
+    private final TokenRegistry tokenRegistry;
     private final DtoMapper mapper;
 
     public AuthService(UserRepository userRepository, PasswordEncoder passwordEncoder,
-                       AuthenticationManager authenticationManager, JwtService jwtService, DtoMapper mapper) {
+                       AuthenticationManager authenticationManager, JwtService jwtService,
+                       TokenRegistry tokenRegistry, DtoMapper mapper) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.authenticationManager = authenticationManager;
         this.jwtService = jwtService;
+        this.tokenRegistry = tokenRegistry;
         this.mapper = mapper;
     }
 
@@ -69,6 +75,21 @@ public class AuthService {
     @Transactional(readOnly = true)
     public AuthDtos.UserDto me(UserPrincipal principal) {
         return mapper.userDto(requireUser(principal.getId()));
+    }
+
+    /**
+     * 登出：按剩余有效期吊销当前令牌。令牌缺失或已失效时幂等返回，不抛错。
+     */
+    public void logout(String authorizationHeader) {
+        if (authorizationHeader == null || !authorizationHeader.startsWith("Bearer ")) {
+            return;
+        }
+        try {
+            Claims claims = jwtService.parse(authorizationHeader.substring(7));
+            tokenRegistry.revoke(claims.getId(), jwtService.remainingSeconds(claims));
+        } catch (JwtException ex) {
+            // 令牌已失效，无需吊销
+        }
     }
 
     public User requireUser(String id) {

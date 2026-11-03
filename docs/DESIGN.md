@@ -1,0 +1,264 @@
+# 网络安全竞赛平台 · 总体设计（v2.0 重构）
+
+> 依据《网络安全竞赛平台研发需求说明》《竞赛平台视觉规范》与《技术实现要求说明》重新设计。
+> 本文档是后续分期实施的基准，标识每条需求的归属模块与落地方式。
+
+## 1. 需求到架构的映射
+
+| 需求域 | 归属模块 | 说明 |
+| --- | --- | --- |
+| 统一赛制引擎、题库、权限、虚拟化调度 | 基础底座 `platform-core` | CTF/AWD/AWDP/理论赛/场景实操/CFS 共享 |
+| CTF 答题判分、动静 flag、writeup、反作弊 | `ctf-service` | 千人级并发 |
+| AWD/AWDP 轮次攻防、check 脚本、靶场隔离 | `awd-service` | 百队级并发 |
+| 排行榜、3D 态势大屏、时序回放、靶机监控 | `situation-service` | WebSocket 秒级推送 |
+| 备案归档、报表导出、审计 | `platform-core` + 各子系统 | 一键备案报告 |
+| SSO/LDAP/第三方登录、手机号开放查询 | `platform-core` 开放接口层 | Token 映射、脱敏、限流 |
+
+## 2. 技术选型（对齐技术约束）
+
+| 层 | 选型 | 约束来源 |
+| --- | --- | --- |
+| 后端语言 | Java 17 + Spring Boot 3.2 | 限定 Java/Python，沿用现有工程 |
+| 前端 | Vue 3 + Vite + Element Plus | 限定 Vue2/Vue3；替换现有原生前端 |
+| 关系库 | MySQL 8（每场比赛逻辑隔离，独立 Schema 命名空间） | 指定 |
+| 缓存 | Redis 7（会话、排行榜 ZSet、限流、热点赛事） | 指定 |
+| 非结构化 | MongoDB 6（writeup 附件元数据、答题记录、日志、提交代码、回放时序事件） | 指定 |
+| 实时推送 | WebSocket（STOMP）+ Redis Pub/Sub 广播 | 秒级榜单/公告 |
+| 靶场调度 | Docker（docker-java），接口抽象 `RangeOrchestrator`，LVP 预留 SPI | 需求要求 Docker+LVP |
+| 时序回放 | MongoDB  capped/TTL 集合存事件流（规模可控；如需可换 InfluxDB） | 时序库要求 |
+| 接口文档 | springdoc-openapi（Swagger UI） | 指定 |
+| 部署 | docker-compose 起步，K8s 清单预留；单台 64GB 物理机可承载 | 指定 |
+
+## 3. 总体架构
+
+```
+┌───────────────────────── 接入层 ─────────────────────────┐
+│ Nginx(静态/反代/WSS)  ·  Vue3 选手端 · Vue3 管理端 · 大屏端 │
+└───────────────┬───────────────────────────┬─────────────┘
+                │ REST + WebSocket          │ 开放 API(签名+限流)
+┌───────────────▼───────────────────────────▼─────────────┐
+│ 业务层（Spring Boot 多模块单体起步，可按模块拆服务）        │
+│  platform-core：用户/RBAC+ABAC/题库/赛制引擎/通知/审计/备案 │
+│  ctf-service：题目/动静flag/判分/writeup/理论赛/场景实操    │
+│  awd-service：轮次状态机/check脚本/攻防计分/靶场分配        │
+│  situation-service：榜单/大屏聚合/回放/靶机监控            │
+│  range-orchestrator：容器拉起/重置/销毁/VLAN(宿主机网络)    │
+├─────────────────────────────────────────────────────────┤
+│ 数据层：MySQL(结构化) · Redis(缓存/会话/限流/榜) · MongoDB  │
+│         (非结构化/日志/回放) · 共享存储(附件/流量包/修补包)   │
+└─────────────────────────────────────────────────────────┘
+```
+
+工程结构（Maven 多模块，保持单容器可部署）：
+
+```
+ctf-platform/
+├── platform-core/        # 用户、权限、题库、赛制引擎、通知、审计、开放API
+├── ctf-service/          # CTF/理论赛/场景实操
+├── awd-service/          # AWD/AWDP 轮次与计分
+├── situation-service/    # 榜单/大屏/回放/监控
+├── range-orchestrator/   # 靶场调度（Docker 实现 + LVP SPI）
+├── app/                  # 启动模块（聚合打包为单个可执行 jar）
+└── web/                  # Vue3 前端（选手端/管理端/大屏端三入口）
+```
+
+## 4. 权限模型（RBAC + ABAC 混合）
+
+- 角色（RBAC 静态授权）：`ADMIN` 管理员、`JUDGE` 裁判（暂停/封号/加分/强制结束/争议裁决）、`TEACHER` 教师（组卷/练习场运营）、`PLAYER` 参赛队员、`OBSERVER` 观摩用户（大屏/赛后数据）。
+- ABAC 动态约束：以「比赛命名空间」为属性域——用户仅能访问其报名/被授权的比赛数据；裁判仅能操作其执裁场次；教师仅能管理其课程/练习场。
+- 实现：`@PreAuthorize` + 自定义 `ContestPermissionEvaluator`，比赛级数据全部携带 `contest_id`（命名空间）字段，SQL 层强制过滤。
+
+## 5. 数据模型设计
+
+### 5.1 MySQL（结构化，核心表）
+
+```
+users(id, username, phone, email, password_hash, display_name, role,
+      banned, totp_secret, third_party_bindings(json), created_at)
+teams(id, contest_id, name, invite_code, captain_id, logo_url, status, created_at)
+contests(id, name, type[CTF|AWD|AWDP|THEORY|SCENARIO|CFS], mode[PERSONAL|TEAM],
+         namespace, status[DRAFT|REGISTERING|NOT_STARTED|RUNNING|SOFT_HALTED|
+         HARD_HALTED|ENDED|ARCHIVED], start_at, end_at, max_participants,
+         allow_late_join, template_id, switch_public_network, created_by)
+registrations(id, contest_id, subject_type[USER|TEAM], subject_id,
+              status[PENDING|APPROVED|REJECTED|QUIT], created_at)
+question_banks(id, type[THEORY|CTF|AWD_RANGE|SCENARIO], name, owner, version)
+questions(id, bank_id, kind[SINGLE|MULTI|JUDGE|FLAG|DYNAMIC_FLAG|SCENARIO],
+          stem, options(json), answer_meta(json), knowledge_tags, difficulty,
+          ext(json)            -- 赛制特有字段统一进 ext 扩展字段
+          , writeup_required, created_at)
+challenges(id, contest_id, question_id, initial_points, min_points, decay,
+           first_blood_mode[ONCE|DECAY], visible, instance_image,
+           instance_port, instance_ttl_minutes, sort)
+flags(id, challenge_id, subject_id, flag_hash, flag_salt, expires_at)  -- 动态flag
+submissions(id, contest_id, user_id, team_id, challenge_id, payload,
+            result, points, ip, device_fp, risk_score, created_at)
+solves(id, contest_id, user_id, team_id, challenge_id, points, blood_rank, solved_at)
+writeups(id, contest_id, challenge_id, user_id, team_id, title, mongo_doc_id,
+         submitted_at, accepted)
+instances(id, contest_id, challenge_id, owner_type[USER|TEAM], owner_id,
+          container_id, vlan_id, host, port, status, expires_at, created_at)
+awd_rounds(id, contest_id, round_no, status, started_at, ended_at)
+awd_scores(id, contest_id, round_no, team_id, attack_points, defense_points,
+           check_passed, detail(json))
+announcements(id, contest_id, title, content_md, target[ALL|TEAM|USER],
+              target_ids(json), channels(json), created_by, created_at)
+audit_logs(id, actor_id, actor_role, action, target, detail(json), ip, created_at)
+contest_archives(id, contest_id, report_path, generated_at, generated_by)
+```
+
+### 5.2 Redis（键规约）
+
+```
+sess:{token}                    会话（TTL 滑动）
+3rd:{thirdToken} -> sessToken   第三方 Token 映射（SSO）
+rank:{contestId}                ZSet 总分榜（member=team/user）
+rank:{contestId}:stage:{n}      阶段榜
+ratelimit:{api}:{key}           令牌桶计数
+flag:{challengeId}:{subjectId}  动态 flag 缓存（写穿 MySQL flags 表）
+notify:{userId}                 待推送队列（Pub/Sub 广播到各节点）
+```
+
+### 5.3 MongoDB（非结构化）
+
+```
+writeup_docs    { _id, contestId, challengeId, userId, markdown, attachments[] }
+answer_records  { contestId, userId, questionId, answer, correct, ts }   -- 理论赛
+submit_payloads { submissionId, code/payload 原文 }
+replay_events   { contestId, ts, type, payload }                          -- 大屏时序回放(TTL)
+op_logs         管理/靶场/推送审计镜像
+```
+
+## 6. 关键子系统设计
+
+### 6.1 CTF 子系统
+
+- **动态 flag**：申请靶机时按 `flag{md5(secret+challengeId+subjectId)}` 生成，注入容器环境变量并落 `flags` 表；判分先查动态 flag，未命中再比静态哈希。
+- **判分链路**：限流（Redis 令牌桶）→ 冷却 → 动态/静态比对 → 落审计（错误也落，`noRollbackFor`）→ 动态积分 + 首杀奖励（一次性/递减可配）→ Redis ZSet 更新 → WebSocket 广播。
+- **理论赛**：单选/多选/判断；随机抽题（按知识点+难度权重）；多选部分得分（对选项按比例、错选清零）；赛后输出班级/个人能力分析报告（按知识点聚合正确率）。
+- **场景实操**：题目配置镜像后，前端一键拉起实例（复用 range-orchestrator），提交关键证据 flag 判分。
+- **黑灯模式**：比赛配置开关，开启后隐藏榜单/解题动态，仅个人可见自身得分。
+- **反作弊（烽火台）**：动态 flag 外泄检测（A 队提交 B 队 flag 直接告警）、答题时序与相似度分析（提交间隔分布、多账号相似 IP/设备指纹）、风控分写入 submission.risk_score；裁判复核台支持一键封号，全部留审计日志；流量分析（识别爆破/数据外发/Web Payload）作为独立探针服务对接告警总线。
+- **writeup**：赛后开放提交，Markdown + 附件存 MongoDB，可沉淀入题库。
+
+### 6.2 AWD/AWDP 子系统
+
+- **轮次状态机**：`ROUND_PREPARE → ROUND_RUNNING(刷新flag+开放提交) → ROUND_CHECK(check脚本) → ROUND_SETTLE(计分)`，由调度器驱动；支持维护窗口。
+- **计分**：攻击分（提交他队动态 flag 成功）+ 防御分（check 脚本验证服务可用且漏洞已修）；check 脚本赛前由裁判预置，支持人工争议裁决改分（写审计）。
+- **靶场**：每队独立 Namespace + VLAN（宿主机网桥/iptables 规则，orchestrator 调 Docker network）；支持拉起/重置/销毁/快照；容器资源限额 CPU/内存/磁盘。
+- **AWDP 增强**：在 AWD 基础上开启流量采集（pcap 落共享存储）与攻击可视化事件流（推大屏）。
+- **内网/公网一键切换**：比赛级开关，切换时 orchestrator 重绑端口映射与防火墙规则。
+
+### 6.3 态势感知子系统
+
+- **榜单**：Redis ZSet 秒级读取；总分榜/阶段榜/首杀榜；TopN 视图；导出 CSV/XLSX；首杀特殊标识。
+- **大屏**：Vue3 独立入口；ECharts（趋势曲线/解题动态）+ 3D 地理飞线（ECharts-GL / three.js，地理底图投射靶机位置，攻击轨迹飞线动画）；1V1 攻击事件 WebSocket 实时推送；1080P/2K/4K 自适应（rem + 缩放容器）。
+- **时序回放**：事件流写 `replay_events`，回放端按时间轴拉取，支持暂停/倍速（0.5x/1x/2x/4x），可导出素材。
+- **靶机监控**：实例心跳 + cAdvisor/自采指标（CPU/内存/网络）、归属战队、check 通过率；大屏支持重启/重置/恢复初始，操作全部审计，异常自动告警。
+
+### 6.4 靶场调度（range-orchestrator）
+
+```
+interface RangeOrchestrator {
+  Instance start(InstanceSpec spec);   // 镜像/端口/资源限额/VLAN/TTL/env(动态flag)
+  void stop(String instanceId);
+  void reset(String instanceId);       // 销毁并按快照重建
+  InstanceStatus status(String instanceId);
+}
+```
+
+- 默认实现 `DockerOrchestrator`（docker-java 连宿主 docker.sock，独立 bridge 网络 + 标签管理）。
+- `NoopOrchestrator` 用于无 Docker 环境与测试。
+- 预留 `LvpOrchestrator` SPI（轻量虚拟机），配置切换。
+- 并发护栏：全局/每用户/每队并发上限；TTL 到期由调度器扫描回收；拉起目标 ≤5–10 分钟、销毁 ≤5 分钟（镜像预热 + 并发池）。
+
+### 6.5 通知与告警
+
+- 两级订阅：用户订阅 + 赛事订阅；通道：站内信、WebSocket 弹窗、邮件、短信网关（可配置外部集成，默认空实现 + 日志）。
+- 触发点：开赛提醒、首杀、战况、轮次切换、被攻击、得分变动、靶机异常。
+
+## 7. 集成与开放接口
+
+### 7.1 第三方登录 / SSO
+
+```
+POST /api/auth/third-party   { channel, thirdToken }
+  1. 调第三方接口校验 thirdToken
+  2. 拉取第三方用户信息 → 绑定/创建本地账号
+  3. 生成本地会话 token，写入 Redis: 3rd:{thirdToken} -> sess:{token}
+  4. 支持会话过期、Token 刷新（POST /api/auth/refresh）、登出销毁（DELETE /api/auth/logout）
+```
+
+- LDAP：`spring-ldap` 同步账号（定时任务 + 登录时回源校验），可配置开关。
+
+### 7.2 开放查询接口（手机号主索引）
+
+```
+GET /open-api/v1/users/{phone}/contest-data
+  Header: X-App-Key / X-Sign(HMAC-SHA256(appSecret, ts+nonce+body))
+  - 权限：仅授权 appKey 可访问，字段白名单返回（脱敏：证件/手机号掩码）
+  - 限流：Redis 令牌桶按 appKey 维度
+  - 审计：每次调用落 op_logs
+```
+
+### 7.3 通用技术要求
+
+- 全局请求日志拦截器：调用方、入参、返回、耗时、错误。
+- 统一 `ApiResponse<T>` + `ErrorCode` + 全局异常处理（沿用 v1.0 规范）。
+- Swagger/OpenAPI 输出；MQTT 接入作为可配置适配器（默认关闭）。
+
+## 8. 视觉规范落地（前端 Design Tokens）
+
+```css
+:root {
+  --color-primary: #295FFF; --color-primary-dark: #1b48e8; --color-primary-light: #e8eeff;
+  --color-success: #00b42a; --color-warning: #ff7d00; --color-error: #f53f3f;
+  --color-disabled: #c9cdd4;
+  --text-title: #1d2129; --text-body: #4e5969; --text-secondary: #86909c; --text-placeholder: #c9cdd4;
+  --bg-page: #ffffff; --bg-card: #f7f8fa; --border: #e5e6eb;
+  --font-family: "PingFang SC","Microsoft YaHei","Helvetica Neue",Helvetica,Arial,sans-serif;
+  /* 字号：24/20/18/16/14/13/12，对应行高 32/28/26/24/22/20/18 */
+}
+```
+
+- 主色仅用于重点按钮、导航高亮、题号选中、进度条、关键标识；大面积背景禁用主色。
+- 状态色严格语义化；标题字重 600、正文 400。
+
+## 9. 部署拓扑
+
+- 最小（单机 64GB）：`nginx + app(单jar多模块) + mysql + redis + mongo + 宿主 docker.sock`，docker-compose 一键拉起。
+- 生产：主控节点（app/nginx）+ 计算集群（靶机容器节点，orchestrator 按标签调度）+ 共享存储（NFS：附件/流量包/修补包）+ 缓存分层（Redis 哨兵）。
+- 高可用：应用无状态水平扩容；节点故障由编排健康检查剔除；SLA 99.95%、72h 连续运行依赖镜像预热与双节点冗余。
+- 网络：比赛区/办公区 VLAN + 防火墙隔离；最小端口暴露；跨域访问审计。
+
+## 10. 与现有 v1.0 的差距分析与分期路线图
+
+现有 v1.0 已具备：用户/战队、赛事(CTF/练习)、动态积分、一二三四血、hint 扣分、双榜、公告、附件、JWT/BCrypt、Flyway、Docker 化。
+
+| 期 | 内容 | 说明 |
+| --- | --- | --- |
+| P1 基础底座升级 | 角色扩展(JUDGE/TEACHER/OBSERVER) + 比赛命名空间隔离 + Redis 接入(会话/限流/榜) + MySQL 默认化 + MongoDB 接入 + 审计日志 | 后续一切的地基 |
+| P2 CTF 增强 | 动态实例(range-orchestrator Docker 实现) + 动态 flag + 理论赛(单选/多选/判断/抽题/报告) + writeup + 黑灯模式 + WebSocket 公告/榜单推送 | 千人 CTF 完整闭环 |
+| P3 前端重构 | Vue3 + Element Plus 三入口（选手/管理/大屏），按视觉规范落 tokens | 替换原生前端 |
+| P4 AWD/AWDP | 轮次状态机、check 脚本、攻防计分、每队隔离靶场、VLAN、流量采集(AWDP) | 百队级 |
+| P5 态势大屏 | ECharts 趋势、3D 飞线、1V1 推送、时序回放、靶机监控面板 | 需 P2/P4 数据流 |
+| P6 集成与开放 | 第三方登录/SSO/LDAP、手机号开放查询接口、MQTT、短信/邮件网关适配 | 可配置外部项 |
+| P7 备案与验收 | 备案报告生成、成绩报表导出、归档流程、压测与 SLA 验证 | 收尾验收 |
+
+反作弊贯穿 P2–P5（动态 flag → 时序/相似度 → 流量分析逐步增强）。
+
+## 11. P1 落地状态（2026-11-03）
+
+P1「基础底座升级」已在现有单模块工程内落地（未拆 Maven 多模块，包结构先行），`mvnw clean test` 13/13 全绿。与上文目标架构的对应关系如下：
+
+| 设计项 | 落地情况 |
+| --- | --- |
+| 角色体系（4.1 RBAC） | `Role` 扩展为 `USER / JUDGE / TEACHER / OBSERVER / ADMIN`；`/api/admin/**` 需 ADMIN 或 JUDGE，封禁与 `PATCH /api/admin/users/{id}/role` 仅 ADMIN；OBSERVER 在题目页隐藏提交区（只读） |
+| 比赛命名空间（4.2 ABAC 属性域） | `events.namespace` 字段全链路落地（实体 / DTO / 管理端表单），`V3` 迁移加唯一索引，正则 `^[a-z0-9][a-z0-9-]{1,59}$`；比赛级数据隔离查询待 P2 引入 contest 模型后启用 |
+| 审计日志 | `audit_logs` 表（V3）+ `AuditService`（`noRollbackFor` 保证业务失败也留痕），覆盖登录/登出/封禁/角色变更/赛事与题目管理；`GET /api/admin/audit-logs` 支持 action 过滤与分页 |
+| MongoDB 接入 | `MongoAuditMirror` 监听 `AuditRecordedEvent`（`AFTER_COMMIT`），`app.mongo.enabled=true` 时镜像到 `op_logs` 集合；缺省关闭不影响启动 |
+| Redis 接入 | `TokenRegistry` 抽象：默认 `InMemoryTokenRegistry`；`app.redis.enabled=true` 时切换 `RedisTokenRegistry`（键 `jwt:revoked:{jti}`，TTL 跟随 token 剩余有效期） |
+| 会话登出销毁（7.1） | JWT 加入 `jti`；`POST /api/auth/logout` 吊销当前 token，`JwtAuthenticationFilter` 逐请求校验黑名单 |
+| MySQL 默认化 | 根 `docker-compose.yml` 与 `deploy/docker-compose.server.yml` 均编排 MySQL 8 + Redis 7 + MongoDB 6（healthcheck + `depends_on: service_healthy`），默认 `mysql` profile；`.env` 可一键降级回 H2 轻量模式 |
+
+P1 未做（按路线图留待后续）：Maven 多模块拆分（P2 起步时进行）、ABAC 数据级过滤（依赖 contest 模型）、Redis 会话/限流/榜单迁移（P2）、Vue3 前端（P3）。

@@ -1,5 +1,6 @@
 package com.example.ctf.security;
 
+import io.jsonwebtoken.Claims;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -24,10 +25,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
     private final UserDetailsService userDetailsService;
+    private final TokenRegistry tokenRegistry;
 
-    public JwtAuthenticationFilter(JwtService jwtService, UserDetailsService userDetailsService) {
+    public JwtAuthenticationFilter(JwtService jwtService, UserDetailsService userDetailsService,
+                                   TokenRegistry tokenRegistry) {
         this.jwtService = jwtService;
         this.userDetailsService = userDetailsService;
+        this.tokenRegistry = tokenRegistry;
     }
 
     @Override
@@ -37,7 +41,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         if (header != null && header.startsWith("Bearer ")) {
             String token = header.substring(7);
             try {
-                String username = jwtService.parse(token).getSubject();
+                Claims claims = jwtService.parse(token);
+                if (tokenRegistry.isRevoked(claims.getId())) {
+                    // 已登出的令牌：视为未认证
+                    SecurityContextHolder.clearContext();
+                    chain.doFilter(request, response);
+                    return;
+                }
+                String username = claims.getSubject();
                 UserDetails user = userDetailsService.loadUserByUsername(username);
                 if (user.isEnabled()) {
                     UsernamePasswordAuthenticationToken authentication =

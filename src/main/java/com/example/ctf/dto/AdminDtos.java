@@ -1,6 +1,8 @@
 package com.example.ctf.dto;
 
+import com.example.ctf.domain.Role;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 import java.time.LocalDateTime;
@@ -17,6 +19,13 @@ public final class AdminDtos {
     }
 
     public record BanRequest(boolean banned) {
+    }
+
+    public record RoleUpdateRequest(@NotNull(message = "角色不能为空") Role role) {
+    }
+
+    public record AuditLogDto(String id, String actorName, String actorRole, String action,
+                              String target, String detail, String ip, LocalDateTime createdAt) {
     }
 
     public record SubmissionDto(String id, String username, String challengeName, String result,
