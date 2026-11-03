@@ -67,7 +67,14 @@ public final class ChallengeDtos {
             @Min(value = 0, message = "最低分不能为负数") Integer minPoints,
             @Min(value = 0, message = "衰减值不能为负数") Integer decayPoints,
             Boolean visible,
-            String flag) {
+            String flag,
+            // P2 靶机配置（可选）
+            String instanceImage,
+            Integer instancePort,
+            Integer instanceTtlMinutes,
+            String instanceCpuLimit,
+            Integer instanceMemoryMb,
+            Boolean instanceDynamicFlag) {
     }
 
     public record HintRequest(
@@ -81,6 +88,18 @@ public final class ChallengeDtos {
                                     String difficultyLabel, int initialPoints, int minPoints, int decayPoints,
                                     int currentPoints, boolean visible, boolean flagConfigured,
                                     String attachmentName, Long attachmentSize, long solveCount,
-                                    LocalDateTime createdAt, LocalDateTime updatedAt) {
+                                    LocalDateTime createdAt, LocalDateTime updatedAt,
+                                    String instanceImage, Integer instancePort, Integer instanceTtlMinutes,
+                                    String instanceCpuLimit, Integer instanceMemoryMb, boolean instanceDynamicFlag) {
     }
+
+    // ---------- P2 动态靶机 DTO ----------
+
+    public record InstanceStatusDto(String instanceId, String challengeId, String challengeName,
+                                    boolean dynamicFlag, String status, String host, Integer port,
+                                    LocalDateTime startedAt, LocalDateTime expiresAt) {}
+
+    public record AdminInstanceDto(String instanceId, String challengeId, String challengeName,
+                                  String ownerUsername, String status, String host, Integer port,
+                                  String containerId, LocalDateTime startedAt, LocalDateTime expiresAt) {}
 }

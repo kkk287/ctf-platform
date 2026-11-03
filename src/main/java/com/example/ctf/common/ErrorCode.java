@@ -21,6 +21,10 @@ public enum ErrorCode {
     RATE_LIMITED(4290, "错误提交次数过多，请稍后再试", HttpStatus.TOO_MANY_REQUESTS),
     COOLDOWN(4291, "提交过于频繁，请稍后再试", HttpStatus.TOO_MANY_REQUESTS),
     FILE_TOO_LARGE(4003, "附件超过大小限制", HttpStatus.BAD_REQUEST),
+    // P2 动态靶机
+    RANGE_UNAVAILABLE(5001, "靶场调度器不可用", HttpStatus.SERVICE_UNAVAILABLE),
+    INSTANCE_NOT_RUNNING(4041, "靶机未启动或已过期", HttpStatus.NOT_FOUND),
+    MAX_INSTANCE_LIMIT(4292, "已达靶机并发上限", HttpStatus.TOO_MANY_REQUESTS),
     INTERNAL_ERROR(5000, "服务器内部错误", HttpStatus.INTERNAL_SERVER_ERROR);
 
     private final int code;

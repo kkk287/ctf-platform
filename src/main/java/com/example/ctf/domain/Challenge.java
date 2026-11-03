@@ -62,6 +62,30 @@ public class Challenge {
     @Column(name = "attachment_size")
     private Long attachmentSize;
 
+    // ----- P2 动态靶机配置（全部可空；为空表示该题目不启用动态靶机） -----
+
+    @Column(name = "instance_image", length = 200)
+    private String instanceImage;
+
+    @Column(name = "instance_port")
+    private Integer instancePort;
+
+    @Column(name = "instance_ttl_minutes")
+    private Integer instanceTtlMinutes;
+
+    @Column(name = "instance_cpu_limit", length = 30)
+    private String instanceCpuLimit;
+
+    @Column(name = "instance_memory_mb")
+    private Integer instanceMemoryMb;
+
+    /**
+     * 启用后：每次申请靶机会为每个 owner 生成独立 flag 注入容器 env 并落 dynamic_flags。
+     * 未启用：容器使用题目自带静态 flag（与现有行为一致）。
+     */
+    @Column(name = "instance_dynamic_flag", nullable = false)
+    private boolean instanceDynamicFlag = false;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
@@ -230,4 +254,22 @@ public class Challenge {
     public void setUpdatedAt(LocalDateTime updatedAt) {
         this.updatedAt = updatedAt;
     }
+
+    public String getInstanceImage() { return instanceImage; }
+    public void setInstanceImage(String instanceImage) { this.instanceImage = instanceImage; }
+
+    public Integer getInstancePort() { return instancePort; }
+    public void setInstancePort(Integer instancePort) { this.instancePort = instancePort; }
+
+    public Integer getInstanceTtlMinutes() { return instanceTtlMinutes; }
+    public void setInstanceTtlMinutes(Integer instanceTtlMinutes) { this.instanceTtlMinutes = instanceTtlMinutes; }
+
+    public String getInstanceCpuLimit() { return instanceCpuLimit; }
+    public void setInstanceCpuLimit(String instanceCpuLimit) { this.instanceCpuLimit = instanceCpuLimit; }
+
+    public Integer getInstanceMemoryMb() { return instanceMemoryMb; }
+    public void setInstanceMemoryMb(Integer instanceMemoryMb) { this.instanceMemoryMb = instanceMemoryMb; }
+
+    public boolean isInstanceDynamicFlag() { return instanceDynamicFlag; }
+    public void setInstanceDynamicFlag(boolean instanceDynamicFlag) { this.instanceDynamicFlag = instanceDynamicFlag; }
 }

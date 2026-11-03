@@ -83,6 +83,25 @@ app:
   mongo:
     # 开启后审计日志同步镜像到 MongoDB 的 op_logs 集合
     enabled: ${MONGO_ENABLED:false}
+  range:
+    # 开启后启用 DockerOrchestrator 拉起靶机；默认 NoopOrchestrator（测试/无 Docker 环境兜底）
+    enabled: ${RANGE_ENABLED:false}
+    docker:
+      # 默认通过挂载的 unix socket 连宿主 Docker：unix:///var/run/docker.sock
+      # 也可直连 HTTP API：http://host:2375 或 https://host:2376
+      host: ${RANGE_DOCKER_HOST:unix:///var/run/docker.sock}
+    # 单用户/单靶题并发实例上限
+    max-instances-per-user: ${RANGE_MAX_PER_USER:3}
+    # 全局并发上限
+    max-instances-global: ${RANGE_MAX_GLOBAL:50}
+    # 默认 TTL（分钟），Challenge 可覆盖；0 表示永不过期（不推荐）
+    default-ttl-minutes: ${RANGE_DEFAULT_TTL:60}
+    # 宿主机对外端口起始（每拉一台靶机递增一个端口）
+    port-bridge-start: ${RANGE_PORT_BRIDGE_START:18000}
+    # 宿主机对外端口上限
+    port-bridge-end: ${RANGE_PORT_BRIDGE_END:18999}
+    # 调度扫描间隔（ms），清理 TTL 到期实例
+    sweep-interval-ms: ${RANGE_SWEEP_MS:60000}
 
 logging:
   level:

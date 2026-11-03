@@ -16,6 +16,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -34,6 +35,7 @@ public class ChallengeService {
     private final AuthService authService;
     private final ScoreboardService scoreboardService;
     private final AuditService auditService;
+    private final DynamicFlagService dynamicFlagService;
 
     @Value("${app.submission.max-wrong-attempts:5}")
     private int maxWrongAttempts;
@@ -49,7 +51,7 @@ public class ChallengeService {
                             SubmissionRepository submissionRepository, EventService eventService,
                             FileStorageService fileStorageService, FlagHasher flagHasher, DtoMapper mapper,
                             AuthService authService, ScoreboardService scoreboardService,
-                            AuditService auditService) {
+                            AuditService auditService, DynamicFlagService dynamicFlagService) {
         this.challengeRepository = challengeRepository;
         this.hintRepository = hintRepository;
         this.hintUnlockRepository = hintUnlockRepository;
@@ -62,6 +64,7 @@ public class ChallengeService {
         this.authService = authService;
         this.scoreboardService = scoreboardService;
         this.auditService = auditService;
+        this.dynamicFlagService = dynamicFlagService;
     }
 
     @Transactional(readOnly = true)
@@ -176,7 +179,16 @@ public class ChallengeService {
         }
 
         String submittedHash = flagHasher.submissionHash(flag);
-        boolean correct = flagHasher.matches(flag, challenge.getFlagHash(), challenge.getFlagSalt());
+        // 动态靶机优先：若该 user 在此 challenge 下有动态 flag（来自活跃实例），先比动态；
+        // 未命中或不存在动态 flag 时回退到题目静态哈希。这样既能覆盖动态 flag 题目，
+        // 也能保持无靶机题目行为不变。
+        boolean correct;
+        Optional<DynamicFlag> dfOpt = dynamicFlagService.resolve(challengeId, user.getId());
+        if (dfOpt.isPresent() && dynamicFlagService.matches(flag, dfOpt.get())) {
+            correct = true;
+        } else {
+            correct = flagHasher.matches(flag, challenge.getFlagHash(), challenge.getFlagSalt());
+        }
         Submission submission = new Submission();
         submission.setUser(user);
         submission.setChallenge(challenge);
@@ -390,7 +402,18 @@ public class ChallengeService {
         challenge.setMinPoints(min);
         challenge.setDecayPoints(decay);
         challenge.setVisible(request.visible() == null || request.visible());
+        // P2 靶机配置（可选字段，null 表示不改动现有值或使用默认）
+        challenge.setInstanceImage(isBlank(request.instanceImage()) ? null : request.instanceImage().trim());
+        challenge.setInstancePort(request.instancePort());
+        challenge.setInstanceTtlMinutes(request.instanceTtlMinutes());
+        challenge.setInstanceCpuLimit(isBlank(request.instanceCpuLimit()) ? null : request.instanceCpuLimit().trim());
+        challenge.setInstanceMemoryMb(request.instanceMemoryMb());
+        if (request.instanceDynamicFlag() != null) {
+            challenge.setInstanceDynamicFlag(request.instanceDynamicFlag());
+        }
     }
+
+    private static boolean isBlank(String s) { return s == null || s.isBlank(); }
 
     private int currentPoints(Challenge challenge) {
         return ScoringPolicy.currentPoints(challenge.getInitialPoints(), challenge.getMinPoints(),
@@ -412,7 +435,9 @@ public class ChallengeService {
                 c.getDifficulty().label(), c.getInitialPoints(), c.getMinPoints(), c.getDecayPoints(),
                 currentPoints(c), c.isVisible(), c.getFlagHash() != null, c.getAttachmentOriginalName(),
                 c.getAttachmentSize(), solveRepository.countByChallengeId(c.getId()),
-                c.getCreatedAt(), c.getUpdatedAt());
+                c.getCreatedAt(), c.getUpdatedAt(),
+                c.getInstanceImage(), c.getInstancePort(), c.getInstanceTtlMinutes(),
+                c.getInstanceCpuLimit(), c.getInstanceMemoryMb(), c.isInstanceDynamicFlag());
     }
 
     public record AttachmentDownload(Path path, String filename, String contentType) {

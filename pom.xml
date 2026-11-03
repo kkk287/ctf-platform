@@ -103,6 +103,18 @@
             <version>${springdoc.version}</version>
         </dependency>
 
+        <!-- P2 动态靶机下发：docker-java 连宿主 Docker（socket 或 HTTP 可配）；NoopOrchestrator 兜底 -->
+        <dependency>
+            <groupId>com.github.docker-java</groupId>
+            <artifactId>docker-java-core</artifactId>
+            <version>3.4.0</version>
+        </dependency>
+        <dependency>
+            <groupId>com.github.docker-java</groupId>
+            <artifactId>docker-java-transport-httpclient5</artifactId>
+            <version>3.4.0</version>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>

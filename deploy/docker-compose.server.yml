@@ -71,8 +71,14 @@ services:
       MONGO_URI: mongodb://mongo:27017/${MYSQL_DATABASE:-ctf}
       UPLOAD_DIR: /app/data/uploads
       TZ: Asia/Shanghai
+      # P2 动态靶机
+      RANGE_ENABLED: ${RANGE_ENABLED:-false}
+      RANGE_DOCKER_HOST: ${RANGE_DOCKER_HOST:-unix:///var/run/docker.sock}
     volumes:
       - ctf-data:/app/data
+      # P2：挂载宿主 docker.sock 拉起靶机容器
+      - /var/run/docker.sock:/var/run/docker.sock
+    user: "0:0"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/actuator/health | grep -q '\"status\":\"UP\"' || exit 1"]
       interval: 30s
