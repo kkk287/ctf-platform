@@ -262,3 +262,29 @@ P1「基础底座升级」已在现有单模块工程内落地（未拆 Maven �
 | MySQL 默认化 | 根 `docker-compose.yml` 与 `deploy/docker-compose.server.yml` 均编排 MySQL 8 + Redis 7 + MongoDB 6（healthcheck + `depends_on: service_healthy`），默认 `mysql` profile；`.env` 可一键降级回 H2 轻量模式 |
 
 P1 未做（按路线图留待后续）：Maven 多模块拆分（P2 起步时进行）、ABAC 数据级过滤（依赖 contest 模型）、Redis 会话/限流/榜单迁移（P2）、Vue3 前端（P3）。
+
+## 12. P2 动态靶机下发落地状态（2026-11-03）
+
+P2「动态靶机下发 MVP」已完成，`mvnw clean test` **17/17 全绿**（P1 13 + 新增 4）。范围聚焦在 range-orchestrator 核心 + 动态 flag 判分链路，理论赛 / writeup / 黑灯模式 / WebSocket 推送仍按路线图延后。
+
+| 设计项 | 落地情况 |
+| --- | --- |
+| RangeOrchestrator SPI（6.4） | `com.example.ctf.range.RangeOrchestrator` 接口：`start / stop / reset / isRunning / backendName`；`NoopOrchestrator`（默认，内存模拟容器，端口从 18000 起递增）+ `DockerOrchestrator`（docker-java 3.4.0，支持 `unix:///var/run/docker.sock` 和 HTTP 直连，`@ConditionalOnProperty(app.range.enabled=true)` 按需装配）；`RangeProperties` 配置绑定（enabled / docker.host / 并发上限 / TTL / 端口池 / sweep 间隔） |
+| 靶机生命周期编排 | `InstanceService`：申请（校验镜像配置 → 并发限制 → 端口分配 → orchestrator.start → Instance/DynamicFlag 落库）/ 重置 / 销毁 / 状态查询 / 管理端列表；同 owner + 同 challenge 已存在活跃实例时直接延长 TTL 复用，不重复拉容器 |
+| TTL 自动回收 | `sweepExpired()` 调度器（`@Scheduled`），每分钟扫一次（可配 `RANGE_SWEEP_MS`）；过期实例置 `EXPIRED` 并异步 `orchestrator.stop` |
+| 动态 flag（6.1） | `DynamicFlagService.generatePlaintext(challengeId, ownerId)` → `flag{md5("ctf-sec:" + challengeId + ":" + ownerId)}` 格式；明文仅用于注入容器 env，数据库只落加盐 SHA-256（复用 FlagHasher） |
+| 判分链路改造（6.1） | `ChallengeService.submit`：先查 `DynamicFlagService.resolve(challengeId, userId)`，命中则 `dynamicFlagService.matches` 直接 correct；未命中或无动态 flag 实例则回退静态 `flagHasher.matches`。这样既能启用动态 flag（每 owner 独立 flag），也能保持无靶机题目行为不变 |
+| 数据模型 | `V4__range_orchestrator.sql`：`challenges` 加 6 个靶机字段（instance_image/instance_port/instance_ttl_minutes/instance_cpu_limit/instance_memory_mb/instance_dynamic_flag）；新表 `instances`（实例生命周期 + 容器元数据）与 `dynamic_flags`（动态 flag 哈希 + salt + 唯一实例约束） |
+| 端点 | `POST /api/challenges/{id}/instance/start`（选手申请）、`POST /reset`、`DELETE /instance`、`GET /instance`（状态查询）、`GET /api/admin/instances`（管理端列表，ADMIN/JUDGE） |
+| 部署 | `docker-compose.yml` 与 `deploy/docker-compose.server.yml`：ctf 服务加 `volumes: /var/run/docker.sock:/var/run/docker.sock` + `user: "0:0"`；`.env.example` 加 P2 变量（`RANGE_ENABLED` 默认 false） |
+
+**P2 集成测试（RangeOrchestratorIntegrationTest，4 用例）**：
+
+| 用例 | 覆盖 |
+| --- | --- |
+| `noopOrchestrator_startStopReset` | NoopOrchestrator start 返回 RUNNING + host/port、复用延长 TTL、reset 新实例、stop 置 STOPPED |
+| `dynamicFlag_generatedAndStoredOnStart` | DynamicFlag 落库 + matches 正确 / 错误提交返回 false |
+| `dynamicFlagService_md5Format` | 明文 `flag{md5}` 格式 + 跨 challengeId 不同 flag |
+| `ttlSweep_expiresRunningInstances` | 手动推 expiresAt 到过去 → sweep 置 EXPIRED 并 stop |
+
+P2 未做（路线图后续）：理论赛 / writeup / 黑灯模式 / WebSocket 推送、LVP SPI 实现、宿主多节点调度、流量采集（AWDP）。
