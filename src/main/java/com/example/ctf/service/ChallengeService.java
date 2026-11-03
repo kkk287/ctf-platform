@@ -6,6 +6,7 @@ import com.example.ctf.domain.*;
 import com.example.ctf.dto.ChallengeDtos;
 import com.example.ctf.dto.EventDtos;
 import com.example.ctf.repository.*;
+import com.example.ctf.realtime.RealtimeHub;
 import com.example.ctf.security.UserPrincipal;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
@@ -15,7 +16,9 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.nio.file.Path;
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -36,6 +39,7 @@ public class ChallengeService {
     private final ScoreboardService scoreboardService;
     private final AuditService auditService;
     private final DynamicFlagService dynamicFlagService;
+    private final RealtimeHub realtimeHub;
 
     @Value("${app.submission.max-wrong-attempts:5}")
     private int maxWrongAttempts;
@@ -51,7 +55,8 @@ public class ChallengeService {
                             SubmissionRepository submissionRepository, EventService eventService,
                             FileStorageService fileStorageService, FlagHasher flagHasher, DtoMapper mapper,
                             AuthService authService, ScoreboardService scoreboardService,
-                            AuditService auditService, DynamicFlagService dynamicFlagService) {
+                            AuditService auditService, DynamicFlagService dynamicFlagService,
+                            RealtimeHub realtimeHub) {
         this.challengeRepository = challengeRepository;
         this.hintRepository = hintRepository;
         this.hintUnlockRepository = hintUnlockRepository;
@@ -65,6 +70,7 @@ public class ChallengeService {
         this.scoreboardService = scoreboardService;
         this.auditService = auditService;
         this.dynamicFlagService = dynamicFlagService;
+        this.realtimeHub = realtimeHub;
     }
 
     @Transactional(readOnly = true)
@@ -222,6 +228,24 @@ public class ChallengeService {
         solve.setBloodRank(bloodRank);
         solve.setSolvedAt(now);
         solveRepository.save(solve);
+
+        // 实时推送：解题动态 + 榜单变更；黑灯模式下不泄露用户名/题名，只发刷新信号
+        String eventId = challenge.getEvent().getId();
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("challengeId", challenge.getId());
+        payload.put("challengeName", challenge.getName());
+        payload.put("username", user.getUsername());
+        payload.put("displayName", user.getDisplayName());
+        payload.put("points", finalPoints);
+        payload.put("solvedAt", now);
+        if (challenge.getEvent().isBlackoutMode()) {
+            realtimeHub.broadcastAfterCommit("scoreboard:" + eventId, "SCOREBOARD_CHANGED",
+                    Map.of("reason", "SOLVE"));
+        } else {
+            realtimeHub.broadcastAfterCommit("solves:" + eventId, "SOLVE", payload);
+            realtimeHub.broadcastAfterCommit("scoreboard:" + eventId, "SCOREBOARD_CHANGED",
+                    Map.of("reason", "SOLVE"));
+        }
 
         long total = solveRepository.sumPointsInEvent(user.getId(), challenge.getEvent().getId());
         int rank = scoreboardService.personalRank(challenge.getEvent().getId(), user.getId());

@@ -60,7 +60,9 @@ public class SecurityConfig {
                                 "/profile.html", "/admin.html", "/assets/**", "/favicon.ico",
                                 "/actuator/health", "/actuator/health/**",
                                 "/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**",
-                                "/api/auth/login", "/api/auth/register", "/error"
+                                "/api/auth/login", "/api/auth/register", "/error",
+                                // WebSocket 握手路径：鉴权由 JwtHandshakeInterceptor 完成
+                                "/ws", "/ws/**"
                         ).permitAll()
                         .requestMatchers("/api/admin/**").hasAnyRole("ADMIN", "JUDGE")
                         .requestMatchers("/api/**").authenticated()

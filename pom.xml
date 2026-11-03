@@ -21,12 +21,19 @@
         <java.version>17</java.version>
         <jjwt.version>0.12.5</jjwt.version>
         <springdoc.version>2.3.0</springdoc.version>
+        <!-- 前端构建命令：Windows 下需要 npm.cmd，由下方 npm-windows profile 覆盖 -->
+        <frontend.npm>npm</frontend.npm>
     </properties>
 
     <dependencies>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <!-- 实时推送：原生 WebSocket 端点 /ws（公告、榜单、解题动态） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-websocket</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -148,4 +155,71 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!-- Windows 下 npm 是可执行脚本 npm.cmd，exec 插件需显式指定 -->
+        <profile>
+            <id>npm-windows</id>
+            <activation>
+                <os>
+                    <family>windows</family>
+                </os>
+            </activation>
+            <properties>
+                <frontend.npm>npm.cmd</frontend.npm>
+            </properties>
+        </profile>
+
+        <!--
+          前端构建 profile（默认不激活）：
+            mvn -Pfrontend -DskipTests package
+          默认构建只使用已提交/已构建的 static/vue 产物，无 Node 环境也能打包；
+          开启该 profile 后先 npm ci 再 npm run build，产物落到 src/main/resources/static/vue。
+        -->
+        <profile>
+            <id>frontend</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <version>3.1.0</version>
+                        <executions>
+                            <execution>
+                                <id>npm-ci</id>
+                                <phase>generate-resources</phase>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                                <configuration>
+                                    <executable>${frontend.npm}</executable>
+                                    <workingDirectory>${project.basedir}/web</workingDirectory>
+                                    <arguments>
+                                        <argument>ci</argument>
+                                        <argument>--no-audit</argument>
+                                        <argument>--no-fund</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>npm-build</id>
+                                <phase>generate-resources</phase>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                                <configuration>
+                                    <executable>${frontend.npm}</executable>
+                                    <workingDirectory>${project.basedir}/web</workingDirectory>
+                                    <arguments>
+                                        <argument>run</argument>
+                                        <argument>build</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

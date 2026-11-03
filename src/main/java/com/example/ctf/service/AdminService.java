@@ -11,6 +11,7 @@ import com.example.ctf.repository.AuditLogRepository;
 import com.example.ctf.repository.SolveRepository;
 import com.example.ctf.repository.SubmissionRepository;
 import com.example.ctf.repository.UserRepository;
+import com.example.ctf.realtime.RealtimeHub;
 import com.example.ctf.security.UserPrincipal;
 import jakarta.persistence.criteria.Predicate;
 import org.springframework.data.domain.Page;
@@ -24,6 +25,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class AdminService {
@@ -36,11 +38,12 @@ public class AdminService {
     private final AuthService authService;
     private final DtoMapper mapper;
     private final AuditService auditService;
+    private final RealtimeHub realtimeHub;
 
     public AdminService(UserRepository userRepository, SubmissionRepository submissionRepository,
                         SolveRepository solveRepository, AnnouncementRepository announcementRepository,
                         AuditLogRepository auditLogRepository, AuthService authService, DtoMapper mapper,
-                        AuditService auditService) {
+                        AuditService auditService, RealtimeHub realtimeHub) {
         this.userRepository = userRepository;
         this.submissionRepository = submissionRepository;
         this.solveRepository = solveRepository;
@@ -49,6 +52,7 @@ public class AdminService {
         this.authService = authService;
         this.mapper = mapper;
         this.auditService = auditService;
+        this.realtimeHub = realtimeHub;
     }
 
     @Transactional(readOnly = true)
@@ -186,6 +190,8 @@ public class AdminService {
         announcement.setCreatedBy(authService.requireUser(userId));
         announcementRepository.save(announcement);
         auditService.record("ANNOUNCEMENT_CREATE", announcement.getTitle(), null);
+        realtimeHub.broadcastAfterCommit("announcement", "ANNOUNCEMENT_CHANGED",
+                Map.of("action", "CREATE", "id", announcement.getId()));
         return mapper.announcementDto(announcement);
     }
 
@@ -197,6 +203,8 @@ public class AdminService {
         announcement.setContent(request.content().trim());
         announcementRepository.save(announcement);
         auditService.record("ANNOUNCEMENT_UPDATE", announcement.getTitle(), null);
+        realtimeHub.broadcastAfterCommit("announcement", "ANNOUNCEMENT_CHANGED",
+                Map.of("action", "UPDATE", "id", announcement.getId()));
         return mapper.announcementDto(announcement);
     }
 
@@ -206,6 +214,8 @@ public class AdminService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "公告不存在"));
         announcementRepository.delete(announcement);
         auditService.record("ANNOUNCEMENT_DELETE", announcement.getTitle(), null);
+        realtimeHub.broadcastAfterCommit("announcement", "ANNOUNCEMENT_CHANGED",
+                Map.of("action", "DELETE", "id", id));
     }
 
     private AdminDtos.AdminUserDto adminUserDto(User user) {
