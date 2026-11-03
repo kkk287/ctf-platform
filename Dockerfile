@@ -1,19 +1,33 @@
-# ---------- 构建阶段 ----------
+# ---------- 1. 前端构建：Vue3 三入口（player / admin / screen） ----------
+# 产物直接输出到 /src/main/resources/static/vue（见 web/vite.config.js 的 outDir）
+FROM node:22-alpine AS frontend
+WORKDIR /web
+
+# 先只复制依赖清单，利用层缓存预装依赖；npm 缓存挂载让重试可以复用已下载的包
+COPY web/package.json web/package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --no-audit --no-fund
+
+COPY web/ ./
+RUN npm run build
+
+# ---------- 2. 后端打包：Maven（用上一阶段产物覆盖 static/vue） ----------
 FROM maven:3.9-eclipse-temurin-17 AS builder
 WORKDIR /build
 
-# 先只复制 pom，利用 Docker 层缓存预下载依赖
+# 先复制 pom，便于依赖层缓存失效控制；Maven 本地仓库用 cache mount 跨构建复用
 COPY pom.xml ./
-RUN mvn -B -q dependency:go-offline
 
-# 再复制源码并打包（测试已在 CI 中执行，这里跳过以加快镜像构建）
+# 源码（.dockerignore 已排除预构建的 static/vue，避免把本地旧产物带进镜像）
 COPY src ./src
-RUN mvn -B -q -DskipTests package
+COPY --from=frontend /src/main/resources/static/vue ./src/main/resources/static/vue
+RUN --mount=type=cache,target=/root/.m2 \
+    mvn -B -DskipTests package
 
-# ---------- 运行阶段 ----------
+# ---------- 3. 运行阶段 ----------
 FROM eclipse-temurin:17-jre-alpine
 LABEL org.opencontainers.image.title="ctf-platform" \
-      org.opencontainers.image.description="CTF 平台：赛事/练习、动态积分、个人与战队排行榜"
+      org.opencontainers.image.description="CTF 平台：赛事/练习、动态积分、排行榜、理论赛、Writeup、动态靶机与 AWD"
 
 RUN addgroup -S app && adduser -S -G app app \
     && mkdir -p /app/data/uploads && chown -R app:app /app

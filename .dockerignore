@@ -9,7 +9,15 @@ data
 .env.*
 !.env.example
 docs/*.tmp
-node_modules
 .DS_Store
 Thumbs.db
 *.iml
+
+# 前端依赖与构建中间产物（镜像内由 Dockerfile 前端阶段重新构建）
+**/node_modules
+web/dist
+web/.vite
+web/.vite-temp
+
+# 预构建的 Vue 产物：镜像内容必须只来自源码构建
+src/main/resources/static/vue

@@ -1,0 +1,102 @@
+# 全家桶编排：MySQL + Redis + MongoDB + 应用（默认 mysql profile）
+#   docker compose -f docker-compose.full.yml up -d --build
+# 轻量单服务 H2 请用根目录 docker-compose.yml（docker compose up -d --build）
+#
+# 说明：DB_URL 使用 `${DB_URL-默认值}`，由用户覆盖时生效；
+# 若想在本编排里跑 h2，需同时设置 SPRING_PROFILES_ACTIVE=h2 与
+# DB_URL=jdbc:h2:file:/app/data/ctf;DB_CLOSE_ON_EXIT=FALSE（否则会沿用下面的 MySQL 默认值）。
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: ctf-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-ctf-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-ctf}
+      MYSQL_USER: ${MYSQL_USER:-ctf}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-ctf}
+      TZ: Asia/Shanghai
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u$${MYSQL_USER} -p$${MYSQL_PASSWORD} --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  redis:
+    image: redis:7-alpine
+    container_name: ctf-redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  mongo:
+    image: mongo:6
+    container_name: ctf-mongo
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval 'db.runCommand({ping:1}).ok' | grep 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  ctf:
+    build:
+      context: .
+    image: ${APP_IMAGE:-ctf-platform:local}
+    container_name: ctf-platform
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-mysql}
+      DB_URL: "${DB_URL-jdbc:mysql://mysql:3306/ctf?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false}"
+      DB_USERNAME: ${DB_USERNAME:-ctf}
+      DB_PASSWORD: ${DB_PASSWORD:-ctf}
+      JWT_SECRET: ${JWT_SECRET:-}
+      DEMO_SEED_ENABLED: ${DEMO_SEED_ENABLED:-true}
+      REDIS_ENABLED: ${REDIS_ENABLED:-true}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      MONGO_ENABLED: ${MONGO_ENABLED:-true}
+      MONGO_URI: ${MONGO_URI:-mongodb://mongo:27017/ctf}
+      UPLOAD_DIR: /app/data/uploads
+      TZ: Asia/Shanghai
+      # P2/P4 动态靶机：默认关闭（NoopOrchestrator）。开启后 DockerOrchestrator 连宿主 docker.sock 拉起靶机容器。
+      RANGE_ENABLED: ${RANGE_ENABLED:-false}
+      RANGE_DOCKER_HOST: ${RANGE_DOCKER_HOST:-unix:///var/run/docker.sock}
+      AWD_SIMULATE_NOOP: ${AWD_SIMULATE_NOOP:-true}
+    volumes:
+      - ctf-data:/app/data
+      # P2：挂载宿主 docker.sock，让 DockerOrchestrator 拉起靶机容器
+      - /var/run/docker.sock:/var/run/docker.sock
+    user: "0:0"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/actuator/health | grep -q '\"status\":\"UP\"' || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  ctf-data:
+    name: ctf-platform-data
+  mysql-data:
+    name: ctf-platform-mysql
+  mongo-data:
+    name: ctf-platform-mongo
