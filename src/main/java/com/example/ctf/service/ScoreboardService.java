@@ -9,6 +9,7 @@ import com.example.ctf.domain.User;
 import com.example.ctf.dto.ScoreboardDtos;
 import com.example.ctf.dto.TeamDtos;
 import com.example.ctf.repository.SolveRepository;
+import com.example.ctf.repository.TheoryAnswerRepository;
 import com.example.ctf.repository.UserRepository;
 import com.example.ctf.security.UserPrincipal;
 import org.springframework.data.domain.PageRequest;
@@ -28,16 +29,18 @@ public class ScoreboardService {
     private final TeamService teamService;
     private final AuthService authService;
     private final DtoMapper mapper;
+    private final TheoryAnswerRepository theoryAnswerRepository;
 
     public ScoreboardService(SolveRepository solveRepository, UserRepository userRepository,
                              EventService eventService, TeamService teamService, AuthService authService,
-                             DtoMapper mapper) {
+                             DtoMapper mapper, TheoryAnswerRepository theoryAnswerRepository) {
         this.solveRepository = solveRepository;
         this.userRepository = userRepository;
         this.eventService = eventService;
         this.teamService = teamService;
         this.authService = authService;
         this.mapper = mapper;
+        this.theoryAnswerRepository = theoryAnswerRepository;
     }
 
     @Transactional(readOnly = true)
@@ -53,7 +56,7 @@ public class ScoreboardService {
         if ("TEAM".equals(boardType)) {
             return teamScoreboard(event, solves, safeLimit, principal);
         }
-        List<ScoreboardDtos.ScoreEntryDto> all = personalEntries(solves);
+        List<ScoreboardDtos.ScoreEntryDto> all = personalEntries(solves, theoryAggregate(event.getId()));
         List<ScoreboardDtos.ScoreEntryDto> entries = all.stream().limit(safeLimit).toList();
         ScoreboardDtos.ScoreEntryDto me = all.stream()
                 .filter(e -> e.id().equals(principal.getId())).findFirst().orElse(null);
@@ -64,7 +67,7 @@ public class ScoreboardService {
     @Transactional(readOnly = true)
     public int personalRank(String eventId, String userId) {
         List<ScoreboardDtos.ScoreEntryDto> entries = personalEntries(
-                solveRepository.findAllForEvent(eventId));
+                solveRepository.findAllForEvent(eventId), theoryAggregate(eventId));
         return entries.stream().filter(e -> e.id().equals(userId)).map(ScoreboardDtos.ScoreEntryDto::rank)
                 .findFirst().orElse(0);
     }
@@ -114,7 +117,8 @@ public class ScoreboardService {
                 solveDtos, hintCost);
     }
 
-    private List<ScoreboardDtos.ScoreEntryDto> personalEntries(List<Solve> solves) {
+    private List<ScoreboardDtos.ScoreEntryDto> personalEntries(List<Solve> solves,
+                                                               Map<String, TheoryAgg> theory) {
         Map<String, PersonalAggregate> aggregates = new HashMap<>();
         for (Solve solve : solves) {
             User user = solve.getUser();
@@ -128,9 +132,34 @@ public class ScoreboardService {
                 aggregate.lastSolveAt = solve.getSolvedAt();
             }
         }
+        // 并入理论赛得分：无 CTF 解题记录的用户也凭理论赛上榜
+        Set<String> missing = new HashSet<>();
+        for (Map.Entry<String, TheoryAgg> entry : theory.entrySet()) {
+            if (!aggregates.containsKey(entry.getKey())) {
+                missing.add(entry.getKey());
+            }
+        }
+        Map<String, User> usersById = missing.isEmpty() ? Map.of()
+                : userRepository.findAllById(missing).stream()
+                        .collect(Collectors.toMap(User::getId, u -> u));
+        for (Map.Entry<String, TheoryAgg> entry : theory.entrySet()) {
+            PersonalAggregate aggregate = aggregates.get(entry.getKey());
+            if (aggregate == null) {
+                User user = usersById.get(entry.getKey());
+                if (user == null || user.isBanned()) {
+                    continue;
+                }
+                aggregate = aggregates.computeIfAbsent(user.getId(), k -> new PersonalAggregate(user));
+            }
+            aggregate.total += entry.getValue().points();
+            LocalDateTime lastAt = entry.getValue().lastAt();
+            if (lastAt != null && (aggregate.lastSolveAt == null || lastAt.isAfter(aggregate.lastSolveAt))) {
+                aggregate.lastSolveAt = lastAt;
+            }
+        }
         List<PersonalAggregate> sorted = aggregates.values().stream()
                 .sorted(Comparator.comparingLong(PersonalAggregate::total).reversed()
-                        .thenComparing(a -> a.lastSolveAt)
+                        .thenComparing(a -> a.lastSolveAt, Comparator.nullsLast(Comparator.naturalOrder()))
                         .thenComparing(a -> a.user.getUsername()))
                 .toList();
         List<ScoreboardDtos.ScoreEntryDto> entries = new ArrayList<>();
@@ -141,6 +170,22 @@ public class ScoreboardService {
                     0, a.total, a.solveCount, a.lastSolveAt));
         }
         return entries;
+    }
+
+    /** 理论赛聚合：每用户总得分与最后作答时间（无理论赛的赛事返回空表）。 */
+    private Map<String, TheoryAgg> theoryAggregate(String eventId) {
+        Map<String, TheoryAgg> result = new HashMap<>();
+        for (Object[] row : theoryAnswerRepository.aggregatePointsByEvent(eventId)) {
+            String userId = (String) row[0];
+            long points = ((Number) row[1]).longValue();
+            LocalDateTime lastAt = (LocalDateTime) row[2];
+            result.put(userId, new TheoryAgg(points, lastAt));
+        }
+        return result;
+    }
+
+    /** 理论赛聚合值 */
+    private record TheoryAgg(long points, LocalDateTime lastAt) {
     }
 
     private ScoreboardDtos.ScoreboardResponse teamScoreboard(Event event, List<Solve> solves, int limit,
