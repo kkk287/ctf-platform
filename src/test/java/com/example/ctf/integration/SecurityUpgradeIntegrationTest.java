@@ -1,7 +1,9 @@
 package com.example.ctf.integration;
 
+import com.example.ctf.repository.EventRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -14,6 +16,8 @@ import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -39,6 +43,20 @@ class SecurityUpgradeIntegrationTest {
     @Autowired
     private ObjectMapper mapper;
 
+    @Autowired
+    private EventRepository eventRepository;
+
+    /** 本测试类创建的额外赛事/用户，测试结束后清理防止污染后续测试 */
+    private final List<String> createdEventIds = new ArrayList<>();
+
+    @AfterEach
+    void cleanup() {
+        for (String id : createdEventIds) {
+            eventRepository.findById(id).ifPresent(eventRepository::delete);
+        }
+        createdEventIds.clear();
+    }
+
     // ---------- 审计与命名空间 ----------
 
     @Test
@@ -52,7 +70,9 @@ class SecurityUpgradeIntegrationTest {
                         "type", "PRACTICE"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
-                .andExpect(jsonPath("$.data.namespace").value("audit-it"));
+                .andExpect(jsonPath("$.data.namespace").value("audit-it"))
+                .andExpect(jsonPath("$.data.id").exists())
+                .andDo(r -> createdEventIds.add(data(r).get("id").asText()));
 
         // 审计落库：EVENT_CREATE 可被查询
         JsonNode logs = dataGet("/api/admin/audit-logs?action=EVENT_CREATE&size=20", adminToken);

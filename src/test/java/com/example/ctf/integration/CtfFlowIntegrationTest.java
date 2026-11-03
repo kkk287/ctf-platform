@@ -1,7 +1,10 @@
 package com.example.ctf.integration;
 
+import com.example.ctf.repository.ChallengeRepository;
+import com.example.ctf.repository.EventRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -16,6 +19,8 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -42,6 +47,28 @@ class CtfFlowIntegrationTest {
 
     @Autowired
     private ObjectMapper mapper;
+
+    @Autowired
+    private EventRepository eventRepository;
+
+    @Autowired
+    private ChallengeRepository challengeRepository;
+
+    /** 本测试创建的额外 event/challenge，结束后清理防止污染后续测试 */
+    private final List<String> createdEventIds = new ArrayList<>();
+    private final List<String> createdChallengeIds = new ArrayList<>();
+
+    @AfterEach
+    void cleanup() {
+        for (String id : createdChallengeIds) {
+            challengeRepository.findById(id).ifPresent(challengeRepository::delete);
+        }
+        for (String id : createdEventIds) {
+            eventRepository.findById(id).ifPresent(eventRepository::delete);
+        }
+        createdChallengeIds.clear();
+        createdEventIds.clear();
+    }
 
     // ---------- 认证 ----------
 
@@ -189,6 +216,7 @@ class CtfFlowIntegrationTest {
                 .andExpect(jsonPath("$.code").value(0))
                 .andReturn();
         String practiceId = data(practiceResult).get("id").asText();
+        createdEventIds.add(practiceId);
 
         MvcResult challengeResult = postJson("/api/admin/challenges", adminToken, Map.of(
                         "eventId", practiceId,
@@ -202,6 +230,7 @@ class CtfFlowIntegrationTest {
                 .andExpect(jsonPath("$.code").value(0))
                 .andReturn();
         String challengeId = data(challengeResult).get("id").asText();
+        createdChallengeIds.add(challengeId);
 
         JsonNode visible = dataGet("/api/challenges?eventId=" + practiceId, userToken)
                 .get("challenges");
@@ -244,7 +273,9 @@ class CtfFlowIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
         String notStartedId = data(notStartedResult).get("id").asText();
-        createChallenge(adminToken, notStartedId, "未开始题目", "flag{not_started}");
+        createdEventIds.add(notStartedId);
+        String notStartedChallengeId = createChallenge(adminToken, notStartedId, "未开始题目", "flag{not_started}");
+        createdChallengeIds.add(notStartedChallengeId);
 
         getJson("/api/challenges?eventId=" + notStartedId, userToken)
                 .andExpect(status().isForbidden())
@@ -261,7 +292,9 @@ class CtfFlowIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
         String endedId = data(endedResult).get("id").asText();
+        createdEventIds.add(endedId);
         String endedChallengeId = createChallenge(adminToken, endedId, "已结束题目", "flag{ended_event}");
+        createdChallengeIds.add(endedChallengeId);
 
         JsonNode endedChallenges = dataGet("/api/challenges?eventId=" + endedId, userToken)
                 .get("challenges");
