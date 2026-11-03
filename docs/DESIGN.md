@@ -287,7 +287,7 @@ P2「动态靶机下发 MVP」已完成，`mvnw clean test` **17/17 全绿**（P
 | `dynamicFlagService_md5Format` | 明文 `flag{md5}` 格式 + 跨 challengeId 不同 flag |
 | `ttlSweep_expiresRunningInstances` | 手动推 expiresAt 到过去 → sweep 置 EXPIRED 并 stop |
 
-P2 未做（路线图后续）：黑灯模式 / WebSocket 推送、LVP SPI 实现、宿主多节点调度、流量采集（AWDP）、writeup 附件（当前 Markdown 仅 TEXT）。
+P2 未做（路线图后续）：WebSocket 推送、LVP SPI 实现、宿主多节点调度、流量采集（AWDP）、writeup 附件（当前 Markdown 仅 TEXT）。黑灯模式已落地，见第 15 节。
 
 ## 13. P2 理论赛落地状态（2026-11-03）
 
@@ -349,3 +349,26 @@ Writeup 未做（路线图后续）：Markdown 附件（`mongo_doc_id` 字段预
 全量 31 测试首次一起跑时出现跨测试污染——`events.get(0)` 从 Demo 数据的 practice event 变成了 CtfFlow/Security 测试临时创建的新赛事（DESC 排序新赛事在前），且临时赛事无 challenge 或已结束，导致 Theory/Writeup seed NPE 或 403。
 
 修复：给每个创建额外 event/challenge 的测试加 `@AfterEach cleanup()`，track 本测试创建的 id 并删除。涉及：`CtfFlowIntegrationTest`（3 event + 3 challenge）、`SecurityUpgradeIntegrationTest`（1 event）。Rule：**任何测试如果创建了 DemoDataInitializer 之外的数据，必须在自己的 cleanup 里清理**。
+
+## 15. P2 黑灯模式落地状态（2026-11-03）
+
+P2「黑灯模式」已完成，`mvnw clean test` **35/35 全绿**（P1 13 + 动态靶机 4 + 理论赛 7 + Writeup 7 + 新增黑灯 4）。比赛级开关，开启后普通选手榜单仅可见自身、解题动态隐藏，管理员/裁判不受限。
+
+| 设计项 | 落地情况 |
+| --- | --- |
+| 数据模型 | `V7__blackout_mode.sql`：`events` 表加 `blackout_mode BOOLEAN NOT NULL DEFAULT FALSE` |
+| 配置入口 | `EventRequest` 加 `blackoutMode`（可空，缺省 false），创建/更新赛事时生效；`EventDto` 返回 `blackoutMode` 供前端切换展示 |
+| 榜单过滤 | `ScoreboardService.scoreboard`：黑灯生效时个人榜 entries 只保留自身条目（`me` 不受影响，仍返回真实排名/得分）；战队榜只保留本队条目 |
+| 解题动态 | `GET /api/scoreboard/recent` 黑灯生效时对普通选手返回空列表（接口新增 principal 入参） |
+| 权限豁免 | `blackoutFor(event, principal)`：仅 `ADMIN / JUDGE` 不受限；TEACHER/OBSERVER 视为普通用户受限 |
+
+**黑灯模式集成测试（BlackoutIntegrationTest，4 用例）**：
+
+| 用例 | 覆盖 |
+| --- | --- |
+| `blackout_playerSeesOnlySelfAndNoRecent` | 选手个人榜仅 1 条自身记录、me 正常、recent 为空、EventDto 携带开关 |
+| `blackout_adminAndJudgeUnaffected` | 管理员/裁判（角色变更后重新登录）榜单与动态全量可见 |
+| `blackout_teamBoardShowsOnlyOwnTeam` | 战队榜仅显示本队 |
+| `blackout_disabledRestoresFullVisibility` | PUT 关闭开关后选手恢复全量可见 |
+
+黑灯未做（路线图后续）：前端榜单/动态组件的黑灯态展示（P3 Vue3 重构时落地）、黑灯期间大屏端脱敏（当前大屏端未独立实现）、黑灯开关变更的专项审计动作（当前复用 `EVENT_UPDATE`）。
