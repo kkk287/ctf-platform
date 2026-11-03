@@ -287,7 +287,7 @@ P2「动态靶机下发 MVP」已完成，`mvnw clean test` **17/17 全绿**（P
 | `dynamicFlagService_md5Format` | 明文 `flag{md5}` 格式 + 跨 challengeId 不同 flag |
 | `ttlSweep_expiresRunningInstances` | 手动推 expiresAt 到过去 → sweep 置 EXPIRED 并 stop |
 
-P2 未做（路线图后续）：理论赛 / writeup / 黑灯模式 / WebSocket 推送、LVP SPI 实现、宿主多节点调度、流量采集（AWDP）。
+P2 未做（路线图后续）：黑灯模式 / WebSocket 推送、LVP SPI 实现、宿主多节点调度、流量采集（AWDP）、writeup 附件（当前 Markdown 仅 TEXT）。
 
 ## 13. P2 理论赛落地状态（2026-11-03）
 
@@ -316,3 +316,36 @@ P2「理论赛 MVP」已完成，`mvnw clean test` **24/24 全绿**（P1 13 + �
 | `paper_requiresConfig` | 未配置理论赛的赛事取卷返回 4040 |
 
 理论赛未做（路线图后续）：班级维度报告导出、难度权重抽题（当前纯随机）、限时作答与防切屏、题目乱序选项、与统一 `question_banks` 模型合并（待多模块拆分）。
+
+## 14. P2 Writeup 落地状态（2026-11-03）
+
+P2「Writeup MVP」已完成，`mvnw clean test` **31/31 全绿**（P1 13 + 动态靶机 4 + 理论赛 7 + 新增 Writeup 7）。赛后开放的解题报告：Markdown 正文存 MySQL，赛后全员可见，管理端审核可采纳/驳回。
+
+| 设计项 | 落地情况 |
+| --- | --- |
+| 数据模型 | `V6__writeups.sql`：`writeups(id,event_id,challenge_id,user_id,title,markdown,status,accepted,...)`，`uk(event_id,user_id,challenge_id)` 一人一题一报告，外键 CASCADE 删除 |
+| 提交前置 | 仅已解出该题的用户可提交（`existsByUserIdAndChallengeId` 校验）；同一题只能提交一次（upsert → 提示"请直接编辑"） |
+| 可见性控制 | **比赛进行中（ONGOING / NOT_STARTED）**：仅作者、`ADMIN / JUDGE / TEACHER` 可见；`SUBMITTED` 状态也视为非公开（防提前泄露）；**赛后（ENDED）**：`SUBMITTED / ACCEPTED` 全员可见，`REJECTED` 仍隐藏 |
+| 审核 | `PUT /api/admin/writeups/{id}/moderate`：设为 `ACCEPTED`（accepted=true）或 `REJECTED`（accepted=false）；审核操作落 `audit_logs` |
+| 权限 | 选手端：登录用户（OBSERVER 排除）仅可操作自己的；详情/列表按事件状态+角色动态可见；管理端：`ADMIN / JUDGE / TEACHER` 全量可见、可审核 |
+| 审计 | 创建/更新/删除/审核均落 `audit_logs`（`WRITEUP_CREATE / WRITEUP_UPDATE / WRITEUP_DELETE / WRITEUP_MODERATE`） |
+
+**Writeup 集成测试（WriteupIntegrationTest，7 用例）**：
+
+| 用例 | 覆盖 |
+| --- | --- |
+| `create_requiresSolve` | 未解出的用户提交 → 403 FORBIDDEN |
+| `create_solverCanSubmit` | 已解出的用户提交成功、状态 SUBMITTED |
+| `create_duplicateRejected` | 同一题重复提交 → 409 CONFLICT + 提示编辑 |
+| `list_duringEvent_onlyOwnVisible` | 非赛后 solver 看到自己的、viewer 看不到他人的 |
+| `detail_duringEvent_forbiddenToOthers` | 非赛后 viewer 访问他人 Writeup → 403；作者与管理员可访问 |
+| `afterEvent_allCanSee` | 赛后 viewer 可看到 SUBMITTED Writeup 的列表与详情 |
+| `moderate_setsAcceptedStatus` | 管理端审核设 ACCEPTED/REJECTED、REJECTED 不出现在 findPublicByEvent 结果中 |
+
+Writeup 未做（路线图后续）：Markdown 附件（`mongo_doc_id` 字段预留，MVP 仅存 TEXT）、writeup 沉淀入题库（accepted 自动同步到 `question_banks`）、writeup 点赞/收藏、writeup 导出 PDF。
+
+### 附：测试隔离踩坑
+
+全量 31 测试首次一起跑时出现跨测试污染——`events.get(0)` 从 Demo 数据的 practice event 变成了 CtfFlow/Security 测试临时创建的新赛事（DESC 排序新赛事在前），且临时赛事无 challenge 或已结束，导致 Theory/Writeup seed NPE 或 403。
+
+修复：给每个创建额外 event/challenge 的测试加 `@AfterEach cleanup()`，track 本测试创建的 id 并删除。涉及：`CtfFlowIntegrationTest`（3 event + 3 challenge）、`SecurityUpgradeIntegrationTest`（1 event）。Rule：**任何测试如果创建了 DemoDataInitializer 之外的数据，必须在自己的 cleanup 里清理**。
