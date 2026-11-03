@@ -3,6 +3,11 @@ target/
 build/
 out/
 
+# 前端依赖与构建产物（产物由 web/ 下 npm run build 生成后随 jar 打包）
+web/node_modules/
+web/dist/
+src/main/resources/static/vue/
+
 # 运行数据（H2 文件库、附件、日志）
 data/
 *.log
