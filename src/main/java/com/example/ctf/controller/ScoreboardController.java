@@ -31,8 +31,9 @@ public class ScoreboardController {
     @GetMapping("/scoreboard/recent")
     public ApiResponse<List<ScoreboardDtos.RecentSolveDto>> recent(
             @RequestParam(required = false) String eventId,
-            @RequestParam(defaultValue = "10") int limit) {
-        return ApiResponse.ok(scoreboardService.recent(eventId, limit));
+            @RequestParam(defaultValue = "10") int limit,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        return ApiResponse.ok(scoreboardService.recent(eventId, limit, principal));
     }
 
     @GetMapping("/me/profile")

@@ -23,7 +23,8 @@ public class DtoMapper {
         var status = EventService.statusOf(event);
         return new EventDtos.EventDto(event.getId(), event.getNamespace(), event.getName(), event.getDescription(),
                 event.getType(), event.getType().label(), status.name(), status.label(), event.getStartAt(),
-                event.getEndAt(), challengeCount, visibleChallengeCount, event.getCreatedAt());
+                event.getEndAt(), event.isBlackoutMode(), challengeCount, visibleChallengeCount,
+                event.getCreatedAt());
     }
 
     public ScoreboardDtos.AnnouncementDto announcementDto(Announcement announcement) {

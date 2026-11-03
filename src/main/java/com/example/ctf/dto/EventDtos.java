@@ -15,8 +15,8 @@ public final class EventDtos {
 
     public record EventDto(String id, String namespace, String name, String description, EventType type,
                            String typeLabel, String status, String statusLabel, LocalDateTime startAt,
-                           LocalDateTime endAt, long challengeCount, long visibleChallengeCount,
-                           LocalDateTime createdAt) {
+                           LocalDateTime endAt, boolean blackoutMode, long challengeCount,
+                           long visibleChallengeCount, LocalDateTime createdAt) {
     }
 
     public record EventRequest(
@@ -27,6 +27,7 @@ public final class EventDtos {
             @Size(max = 1000, message = "赛事描述最多 1000 个字符") String description,
             @NotNull(message = "赛事类型不能为空") EventType type,
             LocalDateTime startAt,
-            LocalDateTime endAt) {
+            LocalDateTime endAt,
+            Boolean blackoutMode) {
     }
 }

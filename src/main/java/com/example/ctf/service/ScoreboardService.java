@@ -57,9 +57,12 @@ public class ScoreboardService {
             return teamScoreboard(event, solves, safeLimit, principal);
         }
         List<ScoreboardDtos.ScoreEntryDto> all = personalEntries(solves, theoryAggregate(event.getId()));
-        List<ScoreboardDtos.ScoreEntryDto> entries = all.stream().limit(safeLimit).toList();
         ScoreboardDtos.ScoreEntryDto me = all.stream()
                 .filter(e -> e.id().equals(principal.getId())).findFirst().orElse(null);
+        // 黑灯模式：普通选手仅可见自身条目
+        List<ScoreboardDtos.ScoreEntryDto> entries = blackoutFor(event, principal)
+                ? (me == null ? List.of() : List.of(me))
+                : all.stream().limit(safeLimit).toList();
         return new ScoreboardDtos.ScoreboardResponse("USER", eventService.getEventDto(event.getId()),
                 entries, me, LocalDateTime.now());
     }
@@ -73,8 +76,12 @@ public class ScoreboardService {
     }
 
     @Transactional(readOnly = true)
-    public List<ScoreboardDtos.RecentSolveDto> recent(String eventId, int limit) {
+    public List<ScoreboardDtos.RecentSolveDto> recent(String eventId, int limit, UserPrincipal principal) {
         Event event = eventService.resolveEvent(eventId);
+        // 黑灯模式：普通选手不可见解题动态
+        if (blackoutFor(event, principal)) {
+            return List.of();
+        }
         int safeLimit = Math.max(1, Math.min(limit, 50));
         return solveRepository.findRecentForEvent(event.getId(), PageRequest.of(0, safeLimit)).stream()
                 .map(s -> new ScoreboardDtos.RecentSolveDto(s.getUser().getUsername(),
@@ -225,8 +232,18 @@ public class ScoreboardService {
         User current = authService.requireUser(principal.getId());
         ScoreboardDtos.ScoreEntryDto me = current.getTeam() == null ? null : entries.stream()
                 .filter(e -> e.id().equals(current.getTeam().getId())).findFirst().orElse(null);
+        // 黑灯模式：普通选手仅可见本队条目
+        List<ScoreboardDtos.ScoreEntryDto> visibleEntries = blackoutFor(event, principal)
+                ? (me == null ? List.of() : List.of(me))
+                : entries.stream().limit(limit).toList();
         return new ScoreboardDtos.ScoreboardResponse("TEAM", eventService.getEventDto(event.getId()),
-                entries.stream().limit(limit).toList(), me, LocalDateTime.now());
+                visibleEntries, me, LocalDateTime.now());
+    }
+
+    /** 黑灯模式是否对当前用户生效：赛事开启开关且用户不是管理员/裁判 */
+    private static boolean blackoutFor(Event event, UserPrincipal principal) {
+        return event.isBlackoutMode()
+                && principal.getRole() != Role.ADMIN && principal.getRole() != Role.JUDGE;
     }
 
     private static final class PersonalAggregate {

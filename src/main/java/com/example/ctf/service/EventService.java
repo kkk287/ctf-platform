@@ -168,6 +168,7 @@ public class EventService {
             event.setStartAt(request.startAt());
             event.setEndAt(request.endAt());
         }
+        event.setBlackoutMode(request.blackoutMode() != null && request.blackoutMode());
     }
 
     private EventDtos.EventDto toDto(Event event) {

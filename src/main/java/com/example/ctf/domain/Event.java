@@ -34,6 +34,10 @@ public class Event {
     @Column(name = "end_at")
     private LocalDateTime endAt;
 
+    /** 黑灯模式：开启后普通选手不可见榜单他人与解题动态，仅能看到自身得分；管理员/裁判不受限 */
+    @Column(name = "blackout_mode", nullable = false)
+    private boolean blackoutMode;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
@@ -104,6 +108,14 @@ public class Event {
 
     public void setEndAt(LocalDateTime endAt) {
         this.endAt = endAt;
+    }
+
+    public boolean isBlackoutMode() {
+        return blackoutMode;
+    }
+
+    public void setBlackoutMode(boolean blackoutMode) {
+        this.blackoutMode = blackoutMode;
     }
 
     public LocalDateTime getCreatedAt() {
