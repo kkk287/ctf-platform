@@ -288,3 +288,31 @@ P2「动态靶机下发 MVP」已完成，`mvnw clean test` **17/17 全绿**（P
 | `ttlSweep_expiresRunningInstances` | 手动推 expiresAt 到过去 → sweep 置 EXPIRED 并 stop |
 
 P2 未做（路线图后续）：理论赛 / writeup / 黑灯模式 / WebSocket 推送、LVP SPI 实现、宿主多节点调度、流量采集（AWDP）。
+
+## 13. P2 理论赛落地状态（2026-11-03）
+
+P2「理论赛 MVP」已完成，`mvnw clean test` **24/24 全绿**（P1 13 + 动态靶机 4 + 新增理论赛 7）。覆盖单选/多选/判断三种题型、随机抽题物化、判分（多选部分得分）、能力报告，理论赛得分并入个人榜。
+
+| 设计项 | 落地情况 |
+| --- | --- |
+| 数据模型 | `V5__theory_exam.sql`：`theory_questions`（题干/选项 JSON/答案 JSON/知识点/难度，挂赛事维度）、`theory_configs`（每赛事一条：各题型抽题数与单题分值）、`theory_answers`（答卷物化，`uk(event_id,user_id,question_id)`） |
+| 抽题（6.1 随机抽题） | 首次访问 `GET /api/events/{id}/theory/paper` 时按配置从该赛事题库分题型抽取：以 `Objects.hash(eventId, userId)` 为随机种子洗牌（同人同卷、不同人不同卷），抽中题目立即物化为 `theory_answers` 空卷；之后访问返回同一份试卷 |
+| 判分（6.1 多选部分得分） | `POST /theory/submit`：SINGLE/JUDGE 全对满分；MULTI 有错选清零、无错选但漏选按正确比例得分（`full × 已选对 / 应选对`，向下取整）；比赛进行期间允许重复提交覆盖；提交结果只回传对错与得分，不回传正确答案（防暴力枚举） |
+| 能力报告（6.1） | `GET /theory/report`：按 `knowledge_tag` 聚合（未标注归为"未标注"），输出题数/答对数/已得分/应得分/得分率；管理端 `GET /api/admin/theory/report` 输出全员知识点聚合 + 每用户得分总览 |
+| 榜单并入 | `ScoreboardService.personalEntries` 聚合源扩展：`TheoryAnswerRepository.aggregatePointsByEvent` 按用户求和理论赛得分并入个人榜（无 CTF 解题记录的用户也凭理论赛上榜）；`personalRank` 同步并入；**战队榜与个人 Profile 总分暂未并入**（理论赛按个人计，待 AWD/AWDP 阶段统一设计多赛制计分） |
+| 权限 | 题库 CRUD / 配置 / 总览：`ADMIN / JUDGE / TEACHER`；取卷与提交：登录用户（OBSERVER 只读排除）；个人报告：登录用户 |
+| 审计 | 题目增删改 / 配置保存 / 提交判分均落 `audit_logs`（`THEORY_QUESTION_*` / `THEORY_CONFIG_SAVE` / `THEORY_SUBMIT`） |
+
+**理论赛集成测试（TheoryIntegrationTest，7 用例）**：
+
+| 用例 | 覆盖 |
+| --- | --- |
+| `paper_materializedAndDeterministic` | 抽题数量/题型构成正确、试卷不泄露答案字段、二次取卷同一试卷 |
+| `submit_gradesAllKindsAndMultiPartial` | 单选答错 0 分、多选漏选部分得分、判断答对满分、结果不泄露答案 |
+| `submit_multiWrongPickCleared` | 多选含错选直接清零 |
+| `scoreboard_includesTheoryPoints` | 个人榜 `me.totalPoints` 含理论赛得分（纯理论赛用户上榜） |
+| `report_aggregatesByKnowledgeTag` | 知识点聚合正确率（网络基础 10/30、Web安全 0/20） |
+| `adminOverview_listsUserScores` | 管理端总览含每用户得分 |
+| `paper_requiresConfig` | 未配置理论赛的赛事取卷返回 4040 |
+
+理论赛未做（路线图后续）：班级维度报告导出、难度权重抽题（当前纯随机）、限时作答与防切屏、题目乱序选项、与统一 `question_banks` 模型合并（待多模块拆分）。
