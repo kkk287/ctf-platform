@@ -102,6 +102,14 @@ app:
     port-bridge-end: ${RANGE_PORT_BRIDGE_END:18999}
     # 调度扫描间隔（ms），清理 TTL 到期实例
     sweep-interval-ms: ${RANGE_SWEEP_MS:60000}
+  awd:
+    # AWD 轮次自动推进/check 扫描间隔
+    tick-ms: ${AWD_TICK_MS:5000}
+    check-interval-seconds: ${AWD_CHECK_INTERVAL_SECONDS:30}
+    check:
+      timeout-ms: ${AWD_CHECK_TIMEOUT_MS:3000}
+      # NoopOrchestrator（无 Docker）下降级为模拟探活通过；生产启用 Docker 后自动走真实 TCP/HTTP 探活
+      simulate-noop: ${AWD_SIMULATE_NOOP:true}
 
 logging:
   level:
