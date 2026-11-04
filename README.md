@@ -58,7 +58,7 @@
 - 角色体系：`USER` 选手 / `JUDGE` 裁判 / `TEACHER` 教师 / `OBSERVER` 观摩（只读）/ `ADMIN` 管理员。
 - 战队：创建（生成邀请码）、凭邀请码加入、退出、队长移除成员。
 
-**管理后台**（`/admin.html`）
+**管理后台**（`/vue/admin.html`）
 
 - 题目、赛事（含 PRACTICE、namespace 命名空间唯一标识）、用户封禁/解封与角色变更、公告、提交审计、异常告警、操作审计日志（可镜像至 MongoDB `op_logs`）。
 
@@ -83,7 +83,7 @@
 | 文档库 | MongoDB 6（可选；审计日志镜像 `op_logs`，缺省关闭） |
 | 安全 | Spring Security 6 + JWT（jjwt 0.12.5，含 jti 吊销）+ BCrypt + RBAC |
 | 文档 | springdoc-openapi 2.3.0 |
-| 前端 | Vue3 + Element Plus 三入口（选手/管理/大屏，构建产物随 jar 打包）+ 原生静态页（零 CDN） |
+| 前端 | Vue3 + Element Plus 三入口（选手/管理/大屏，构建产物随 jar 打包），根路径重定向到 Vue 选手端 |
 | 部署 | Docker 多阶段构建 + Docker Compose v2 + GHCR + GitHub Actions |
 
 ## 仓库结构
@@ -153,7 +153,7 @@ docker compose ps                                  # ctf 应为 healthy
 curl -fsS http://127.0.0.1:8080/actuator/health    # {"status":"UP"}
 ```
 
-- 页面：`http://<服务器IP>:8080/`
+- 页面：`http://<服务器IP>:8080/`（302 重定向到 `/vue/player.html`）；管理端 `/vue/admin.html`，大屏 `/vue/screen.html`
 - 数据持久化：named volume `ctf-platform-data` → 容器 `/app/data`（H2 库、附件与上传）；全家桶模式另有 `ctf-platform-mysql`、`ctf-platform-mongo`
 - 停止：`docker compose down`（保留数据）；彻底清理：`docker compose down -v`
 
@@ -225,7 +225,7 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-- 页面：<http://localhost:8080/>
+- 页面：<http://localhost:8080/>（302 重定向到 `/vue/player.html`）；管理端 <http://localhost:8080/vue/admin.html>，大屏 <http://localhost:8080/vue/screen.html>
 - Swagger：<http://localhost:8080/swagger-ui.html>
 - 数据：`./data/ctf.mv.db`、附件 `./data/uploads`；删除 `data/` 可重置演示数据
 

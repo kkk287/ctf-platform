@@ -28,7 +28,7 @@ java -jar target/ctf-platform-1.0.0.jar
 
 启动后：
 
-- 页面：<http://localhost:8080/>
+- 页面：<http://localhost:8080/>（302 到 `/vue/player.html`）；管理端 `/vue/admin.html`，大屏 `/vue/screen.html`
 - 健康检查：<http://localhost:8080/actuator/health>
 - Swagger：<http://localhost:8080/swagger-ui.html>
 - 数据文件：`./data/ctf.mv.db`、附件 `./data/uploads`
@@ -167,15 +167,16 @@ docker compose up -d --build
 # 1) 健康检查
 curl -fsS http://<server>:8080/actuator/health     # 期望 {"status":"UP"}
 
-# 2) 页面可访问
-curl -I http://<server>:8080/                      # 200
+# 2) 页面可访问（根路径 302 到 Vue 选手端）
+curl -I http://<server>:8080/                      # 302 Location: /vue/player.html
+curl -I http://<server>:8080/vue/player.html       # 200
 
 # 3) 容器状态与重启策略
 docker compose -f /opt/ctf/docker-compose.yml ps   # STATUS 应为 healthy / running
 docker inspect -f '{{.HostConfig.RestartPolicy.Name}}' ctf-platform   # unless-stopped
 ```
 
-浏览器验证：打开 `http://<server>:8080/` → `admin / Admin@123` 登录 → 进入管理后台 → 用 `alice / Alice@123` 解题 → 排行榜出现名次。
+浏览器验证：打开 `http://<server>:8080/`（自动跳到 `/vue/player.html`）→ `admin / Admin@123` 登录 → 管理端 `/vue/admin.html` → 用 `alice / Alice@123` 解题 → 排行榜出现名次。
 
 服务器重启自恢复测试：
 

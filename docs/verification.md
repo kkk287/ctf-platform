@@ -99,18 +99,16 @@ pwsh -NoProfile -File scripts\verify-flow.ps1 -BaseUrl http://127.0.0.1:18080
 
 ## 4. 页面与接口文档可访问性
 
-实测（HTTP，`http://127.0.0.1:18080`）：
+实测（HTTP，`http://127.0.0.1:8080`，原生静态页面已下线）：
 
 | 路径 | 结果 |
 |---|---|
-| `/` | 200（返回 `index.html`） |
-| `/login.html` | 200 |
-| `/index.html` | 200 |
-| `/challenge.html` | 200 |
-| `/scoreboard.html` | 200 |
-| `/profile.html` | 200 |
-| `/admin.html` | 200 |
-| `/assets/style.css`、`/assets/common.js` | 200 |
+| `/` | 302 → `/vue/player.html` |
+| `/index.html`、`/login.html` | 302 → `/vue/player.html` |
+| `/vue/player.html` | 200 |
+| `/vue/admin.html` | 200 |
+| `/vue/screen.html` | 200 |
+| `/challenge.html`、`/scoreboard.html`、`/profile.html` | 404（旧原生页面已删除） |
 | `/swagger-ui.html` | 302 → `/swagger-ui/index.html`（正常重定向） |
 | `/v3/api-docs` | 200（OpenAPI JSON） |
 
@@ -133,12 +131,12 @@ docker compose up -d --build
 | 镜像构建 | `ctf-platform:local` 构建成功（多阶段构建，约 382 MB），`mvn -DskipTests package` 在容器内通过 |
 | 容器状态 | `Up (healthy)`，端口 `0.0.0.0:18081->8080/tcp` |
 | 健康检查 | `GET /actuator/health` → 200 `{"status":"UP"}` |
-| 页面访问 | `/` 200、`/login.html` 200、`/assets/style.css` 200 |
+| 页面访问 | `/` 302 → `/vue/player.html`；`/vue/player.html` 200 |
 | 重启策略 | `docker inspect` → `RestartPolicy=unless-stopped` |
 | 数据卷 | `ctf-platform-data:/app/data`（H2 文件库 + 上传附件） |
 | 重启自恢复 | `docker restart ctf-platform` 后约 42 秒恢复健康；重启前通过管理端创建的练习区在重启后仍存在（数据卷持久化），验证后已删除 |
 | 登录回归 | 重建镜像后 `alice / Alice@123` 登录 200，返回 `teamName=0x00sec` |
-| 浏览器 UI | 在容器页面实测登录：提交后跳转 `/index.html`，可见“秋季夺旗赛 2026”与“[练习] 常驻练习区 · 进行中”入口及题目卡片，无错误提示 |
+| 浏览器 UI | 在容器页面实测登录：`/` 重定向到 `/vue/player.html`，登录后可见“秋季夺旗赛 2026”与“[练习] 常驻练习区 · 进行中”入口及题目卡片，无错误提示 |
 
 > 首次容器实测发现：已加入战队的用户登录返回 500（`LazyInitializationException: Team proxy - no Session`）。已在 `AuthService.login` 增加 `@Transactional(readOnly = true)`，并在集成测试中补充“alice 登录返回战队名”的回归断言，重建镜像后复测通过。
 

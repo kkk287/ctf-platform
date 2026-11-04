@@ -1,17 +1,17 @@
 # 演示脚本（DEMO，5-8 分钟）
 
 > 适用场景：评审现场核验 / 录屏演示。
-> 环境：`http://<host>:8080/`（本地为 `http://localhost:8080/`）。
+> 环境：`http://<host>:8080/`（本地为 `http://localhost:8080/`，根路径 302 到 `/vue/player.html`）。
 > 账号：`alice / Alice@123`（选手，0x00sec 队长）、`admin / Admin@123`（管理员）、`bob / Bob@123`（0x00sec 成员）。
 > 默认 flag 见 `README.md`，演示时可直接复制。
 
 ## 0. 开场（约 30 秒）
 
-**操作**：打开首页 → 自动跳转登录页，展示深色界面与"演示账号"快捷填充按钮。
+**操作**：打开根路径 → 302 到 `/vue/player.html` 登录页，展示深色界面与"演示账号"快捷填充按钮。
 
 **讲解要点**：
 
-- Spring Boot 3 + JWT 无状态认证，前端为随 JAR 发布的原生静态页，零外网 CDN，内网可用。
+- Spring Boot 3 + JWT 无状态认证，前端为随 JAR 发布的 Vue3 三入口（选手 / 管理 / 大屏），零外网 CDN，内网可用。
 - 默认 H2 文件库 + Docker 数据卷，服务器 `docker compose up -d` 即可启动。
 
 **预期**：登录页正常渲染，无任何外链加载错误（可在 F12 Network 观察请求均指向本站）。

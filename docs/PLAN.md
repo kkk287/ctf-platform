@@ -117,18 +117,19 @@ PRACTICE                       -> 一直可见、可提交
 | 4090 | 409 | 唯一性冲突（用户名/战队名等） |
 | 4290/4291 | 429 | 错误次数超限 / 冷却中 |
 
-## 6. 页面清单（`src/main/resources/static`）
+## 6. 页面清单（Vue3 三入口）
 
-| 页面 | 功能 |
-|---|---|
-| `login.html` | 登录 / 注册双 tab，演示账号一键填充 |
-| `index.html` | 赛事/练习区切换、赛事 hero 与倒计时、公告、分类筛选、搜索、只看未解出、题目卡片（分值/解出数/我的状态） |
-| `challenge.html` | 题目描述、附件下载、flag 提交、提示解锁、最近解题动态、分值构成提示 |
-| `scoreboard.html` | 赛事切换、个人/战队榜切换、Top N、我的名次、前三领奖台、最近动态、30s 自动刷新 |
-| `profile.html` | 总分/解题数/名次统计、解题记录、战队创建/加入/退出/成员管理 |
-| `admin.html` | 题目/赛事/用户/提交审计/异常告警/公告 六个标签页与弹窗编辑 |
+构建产物位于 `src/main/resources/static/vue`，根路径与旧版原生入口统一重定向到 Vue 选手端。
 
-全部为原生 HTML/CSS/JS，无构建步骤、无外网 CDN；深色科技风 + 等宽字体点缀，中文文案。
+| 入口 | 路径 | 功能 |
+|---|---|---|
+| 选手端 | `/vue/player.html` | 登录/注册、赛事与练习区切换、题目列表、题目详情与提交、提示解锁、排行榜、个人战绩与战队 |
+| 管理端 | `/vue/admin.html` | 题目/赛事/用户/靶机实例/提交审计/异常告警/公告/AWD 轮次 |
+| 大屏端 | `/vue/screen.html` | 排行榜与 AWD 态势大屏，未登录可看匿名只读数据 |
+
+根路径 `/`、`/index.html`、`/login.html` 均 302 到 `/vue/player.html`；旧的原生页面（`challenge.html`、`scoreboard.html`、`profile.html`、`admin.html`）已下线，访问返回 404。
+
+全部为本地静态资源，无外网 CDN；深色科技风 + 等宽字体点缀，中文文案。
 
 ## 7. 非功能设计
 
@@ -170,13 +171,13 @@ PRACTICE                       -> 一直可见、可提交
 | 重复提交/已解出错误码 | `ErrorCode.ALREADY_SOLVED` | 已实现 |
 | 个人榜/战队榜、赛事隔离 | `ScoreboardService` | 已实现 |
 | top N、我的名次、最近动态 | `/api/scoreboard`、`/api/scoreboard/recent` | 已实现 |
-| 管理后台（题目/赛事/用户/审计/公告） | `AdminController`、`AdminService`、`admin.html` | 已实现 |
+| 管理后台（题目/赛事/用户/审计/公告） | `AdminController`、`AdminService`、`/vue/admin.html` | 已实现 |
 | 防作弊（IP/UA + 同 IP 多账号告警） | `Submission`、`findSharedIpGroups`、`/api/admin/anomalies` | 已实现 |
 | 统一响应/异常/校验/分页/OpenAPI/Actuator | `common/*`、`GlobalExceptionHandler`、springdoc、actuator | 已实现 |
 | H2 默认 + MySQL/PG profile | `application-h2/mysql/postgres.yml` | 已实现 |
 | Docker + compose + 健康检查 + 数据卷 | `Dockerfile`、`docker-compose.yml`、`deploy/docker-compose.server.yml` | 已实现 |
 | GitHub Actions CI + GHCR + SSH 部署 | `.github/workflows/ci.yml`、`deploy.yml` | 已实现 |
-| 前端七类页面、零 CDN | `static/*.html` + `assets/*` | 已实现 |
+| 前端三入口、零 CDN | `web/src`（构建产物 `static/vue/*`），根路径重定向 | 已实现 |
 | 单元 + 集成测试 | `ScoringPolicyTest`、`FlagHasherTest`、`CtfFlowIntegrationTest` | 已实现，`mvnw test` 全绿（见 verification） |
 
 ## 9. 风险与后续可选增强

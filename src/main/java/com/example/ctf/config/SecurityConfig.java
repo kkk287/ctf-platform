@@ -56,8 +56,8 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
-                                "/", "/login.html", "/index.html", "/challenge.html", "/scoreboard.html",
-                                "/profile.html", "/admin.html", "/assets/**", "/favicon.ico",
+                                // 根路径与旧入口重定向到 Vue 选手端；Vue 三入口静态资源
+                                "/", "/login.html", "/index.html", "/vue/**", "/favicon.ico",
                                 "/actuator/health", "/actuator/health/**",
                                 "/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**",
                                 "/api/auth/login", "/api/auth/register", "/error",
