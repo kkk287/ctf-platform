@@ -9,25 +9,12 @@ const mode = ref('login')
 const loading = ref(false)
 const form = reactive({ username: '', password: '', displayName: '' })
 
-const demoAccounts = [
-  { label: '管理员 ADMIN', username: 'admin', password: 'Admin@123' },
-  { label: '选手 alice · 0x00sec 队长', username: 'alice', password: 'Alice@123' },
-  { label: '选手 bob · 0x00sec', username: 'bob', password: 'Bob@123' },
-  { label: '选手 carol · Byte Raiders 队长', username: 'carol', password: 'Carol@123' }
-]
-
 const rules = {
   username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
   password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
 }
 
 const formRef = ref(null)
-
-function fill(item) {
-  mode.value = 'login'
-  form.username = item.username
-  form.password = item.password
-}
 
 async function submit() {
   if (formRef.value) {
@@ -70,7 +57,7 @@ async function submit() {
       </el-tabs>
 
       <p v-if="mode === 'login'" class="muted small" style="margin: 0 0 14px">
-        使用演示账号或注册新选手账号进入平台。
+        请输入账号密码进入平台。
       </p>
       <p v-else class="muted small" style="margin: 0 0 14px">
         注册后自动登录，可创建或加入战队。
@@ -88,27 +75,13 @@ async function submit() {
             v-model="form.password"
             type="password"
             show-password
-            :placeholder="mode === 'register' ? '密码长度需为 8-64 位' : '登录演示账号可直接使用下方凭据'"
+            :placeholder="mode === 'register' ? '密码长度需为 8-64 位' : '请输入密码'"
           />
         </el-form-item>
         <el-button type="primary" style="width: 100%" :loading="loading" @click="submit">
           {{ mode === 'register' ? '注册并进入' : '登录' }}
         </el-button>
       </el-form>
-
-      <div v-if="mode === 'login'" style="margin-top: 18px">
-        <div class="muted small" style="margin-bottom: 8px">演示账号（点击自动填充）</div>
-        <el-button
-          v-for="item in demoAccounts"
-          :key="item.username"
-          size="small"
-          style="width: 100%; margin-bottom: 6px; justify-content: space-between"
-          @click="fill(item)"
-        >
-          <span>{{ item.label }}</span>
-          <span class="mono muted">{{ item.username }} / {{ item.password }}</span>
-        </el-button>
-      </div>
     </div>
   </div>
 </template>
