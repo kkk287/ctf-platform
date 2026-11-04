@@ -61,6 +61,8 @@ public class SecurityConfig {
                                 "/actuator/health", "/actuator/health/**",
                                 "/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**",
                                 "/api/auth/login", "/api/auth/register", "/error",
+                                // 大屏匿名只读：AWD 比分/轮次，不含 flag 与实例地址
+                                "/api/public/**",
                                 // WebSocket 握手路径：鉴权由 JwtHandshakeInterceptor 完成
                                 "/ws", "/ws/**"
                         ).permitAll()

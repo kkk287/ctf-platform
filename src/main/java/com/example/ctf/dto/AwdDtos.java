@@ -67,4 +67,14 @@ public final class AwdDtos {
                                  List<AttackLogDto> attacks, List<TeamScoreDto> scoreboard,
                                  List<RoundScoreDto> rounds) {
     }
+
+    /** 大屏匿名只读：仅公开不影响公平的字段，不含 flag、实例地址与攻击明细。 */
+    public record PublicTeamScoreDto(String teamId, String teamName, int attackGain, int defenseLoss,
+                                     int downtimeLoss, int totalScore, int rank) {
+    }
+
+    public record PublicScoreboardDto(String roundId, String roundName, String status, String statusLabel,
+                                      int currentRound, int totalRounds, int remainingSeconds,
+                                      LocalDateTime roundEndsAt, List<PublicTeamScoreDto> teams) {
+    }
 }

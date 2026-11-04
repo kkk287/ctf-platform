@@ -372,3 +372,30 @@ P2「黑灯模式」已完成，`mvnw clean test` **35/35 全绿**（P1 13 + 动
 | `blackout_disabledRestoresFullVisibility` | PUT 关闭开关后选手恢复全量可见 |
 
 黑灯未做（路线图后续）：前端榜单/动态组件的黑灯态展示（P3 Vue3 重构时落地）、黑灯期间大屏端脱敏（当前大屏端未独立实现）、黑灯开关变更的专项审计动作（当前复用 `EVENT_UPDATE`）。
+
+## 16. P4 AWD 大屏匿名只读榜单（2026-11-04）
+
+大屏端通常无人登录，为让 `screen.html` 直接展示 AWD 比分，新增 `/api/public/awd/**` 匿名只读接口；选手端与管理端接口保持原样。
+
+| 设计项 | 落地情况 |
+| --- | --- |
+| 公开接口 | `GET /api/public/awd/rounds/current?eventId=`：按 `RUNNING > PAUSED > SCORING > PREP` 选当前轮，返回 `PublicScoreboardDto`；无轮次时 `data=null`。`GET /api/public/awd/rounds/{id}/scoreboard`：指定轮次同一结构 |
+| 返回字段 | `roundId / roundName / status / statusLabel / currentRound / totalRounds / remainingSeconds / roundEndsAt` + 每队 `teamId / teamName / attackGain / defenseLoss / downtimeLoss / totalScore / rank` |
+| 鉴权边界 | **不返回** flag（含本队 myFlag）、攻击记录明细（attacks）、靶机 `host/port/containerId`、队员名单；敏感信息仍只走 `GET /api/awd/rounds/{id}/scoreboard`（JWT，仅本队 flag）与 `/api/admin/awd/**`（ADMIN） |
+| SecurityConfig | `"/api/public/**"` permitAll，位于 `/api/**` authenticated 之前 |
+| 大屏降级 | `web/src/screen/App.vue` 的 `loadAwd()`：无 token 时调用公开接口并**不建立 WebSocket 订阅**（握手需 JWT），靠 30s 轮询刷新；已登录时仍走原 `/api/awd` 接口与 `awd:{id}` 主题 |
+
+**验证记录（本机 H2 内存库、`RANGE_ENABLED=false`、`AWD_SIMULATE_NOOP=true`）**：
+
+- 匿名 `GET /api/public/awd/rounds/current?eventId=...` → 200；载荷无 `flag/myFlag/host/port/containerId/attacks/members` 字段；红队 50 分排名 1、蓝队防守扣 20 分排名 2。
+- 匿名 `GET /api/public/awd/rounds/{id}/scoreboard` → 200，STOP/FINISH 后仍可按 id 读取最终状态。
+- 匿名 `GET /api/awd/rounds/{id}/scoreboard` → 401；匿名 `GET /api/admin/awd/rounds/{id}` → 401。
+- `npm run build` 通过（三入口产物）。
+
+### 真实 Docker 靶场现状（未完成实测）
+
+本轮尝试把 `RANGE_ENABLED=true` 的实例下发转成实测，卡在应用装配层：`DockerOrchestrator`（`@ConditionalOnProperty(app.range.enabled=true)`）与 `NoopOrchestrator`（无条件 `@Component`）同时注册，`RangeOrchestrator` 注入点出现两个候选 Bean，应用无法启动。该问题未在轮次内修复，因此：
+
+- 相关未验证改动（镜像本地复用、轮内 flag 写入容器、`RANGE_DOCKER_ADDRESS`）**已回退，不随本次提交入库**；
+- 真实实例下发、真实 TCP/HTTP 探活、STOP 回收容器**均未验证**，不作为交付能力；
+- 后续需先给 `NoopOrchestrator` 加 `@ConditionalOnProperty(name="app.range.enabled", havingValue="false", matchIfMissing=true)`，再按 `RANGE_DOCKER_ADDRESS=host.docker.internal` + 挂载 `docker.sock` 的方式补测。

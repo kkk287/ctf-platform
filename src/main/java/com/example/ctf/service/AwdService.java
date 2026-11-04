@@ -538,6 +538,35 @@ public class AwdService {
                 simulateNoopChecks && orchestrator.backendName().equals("noop"));
     }
 
+    /** 大屏匿名只读：当前轮次（RUNNING > PAUSED > SCORING > PREP）的比分快照，无轮次返回 null。 */
+    public AwdDtos.PublicScoreboardDto currentPublicScoreboard(String eventId) {
+        AwdDtos.RoundDto pick = null;
+        for (String status : List.of("RUNNING", "PAUSED", "SCORING", "PREP")) {
+            for (AwdDtos.RoundDto dto : listRounds(eventId)) {
+                if (dto.status().equals(status)) {
+                    pick = dto;
+                    break;
+                }
+            }
+            if (pick != null) break;
+        }
+        return pick == null ? null : publicScoreboard(pick.id());
+    }
+
+    /** 公开只读比分：仅队名/得分/排名/轮次/状态，不含 flag、攻击记录与实例地址。 */
+    public AwdDtos.PublicScoreboardDto publicScoreboard(String roundId) {
+        AwdRound round = requireRound(roundId);
+        List<AwdDtos.PublicTeamScoreDto> teams = new ArrayList<>();
+        for (AwdDtos.TeamScoreDto t : scoreboard(roundId)) {
+            teams.add(new AwdDtos.PublicTeamScoreDto(t.teamId(), t.teamName(), t.attackGain(),
+                    t.defenseLoss(), t.downtimeLoss(), t.totalScore(), t.rank()));
+        }
+        int remaining = round.getStatus() == AwdStatus.RUNNING ? secondsLeft(round) : round.getRemainingSeconds();
+        return new AwdDtos.PublicScoreboardDto(round.getId(), round.getName(), round.getStatus().name(),
+                round.getStatus().label(), round.getCurrentRound(), round.getTotalRounds(),
+                Math.max(0, remaining), round.getRoundEndsAt(), teams);
+    }
+
     public List<AwdDtos.CheckDto> checkDtos(String roundId, int roundNo) {
         List<AwdCheck> checks = roundNo > 0
                 ? checkRepository.findByRoundIdAndRoundNoOrderByCheckedAtDesc(roundId, roundNo)

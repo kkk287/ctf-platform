@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
-import { api } from '../shared/api.js'
+import { api, getToken } from '../shared/api.js'
 import { countdown, relativeTime, formatShort, eventStatusType } from '../shared/format.js'
 import { subscribe, onRealtimeStatus } from '../shared/realtime.js'
 
@@ -95,6 +95,19 @@ async function loadAnnouncements() {
 async function loadAwd() {
   if (!currentEventId.value) return
   try {
+    // 未登录大屏走公开只读接口（不含 flag/实例地址），且不建立 WebSocket 订阅
+    if (!getToken()) {
+      const publicBoard = await api(
+        '/public/awd/rounds/current?eventId=' + encodeURIComponent(currentEventId.value),
+        { authRedirect: false }
+      )
+      awdBoard.value = publicBoard || null
+      if (awdRoundId.value) {
+        awdRoundId.value = ''
+        bindAwd()
+      }
+      return
+    }
     const rounds = await api(
       '/awd/rounds?eventId=' + encodeURIComponent(currentEventId.value),
       { authRedirect: false }
