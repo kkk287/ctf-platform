@@ -1,5 +1,6 @@
 package com.example.ctf.range;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
@@ -10,8 +11,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 /**
  * 无 Docker 环境兜底实现：在内存里用 {@link ConcurrentHashMap} 模拟容器生命周期。
  * 宿主端口从配置的 {@code portBridgeStart} 起递增，按 owner + challenge 维度唯一。
+ * <p>
+ * 与 {@link DockerOrchestrator} 互斥：仅在 {@code app.range.enabled} 未开启时注册。
  */
 @Component
+@ConditionalOnProperty(name = "app.range.enabled", havingValue = "false", matchIfMissing = true)
 public class NoopOrchestrator implements RangeOrchestrator {
 
     private final Map<String, String> running = new ConcurrentHashMap<>();  // containerId -> spec 描述

@@ -23,6 +23,14 @@ public interface RangeOrchestrator {
     /** 查询容器是否仍在运行；返回 true 视为实例活跃。 */
     boolean isRunning(String containerId);
 
+    /**
+     * 将新 flag 写入运行中的靶机（AWD 轮换时调用）。
+     * 无 Docker 的后端默认不做任何事；失败由调用方记录，不影响轮次推进。
+     */
+    default void updateFlag(String containerId, String flagFile, String flag) {
+        /* no-op */
+    }
+
     /** 后端名称，用于日志。 */
     String backendName();
 }

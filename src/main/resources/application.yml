@@ -90,6 +90,9 @@ app:
       # 默认通过挂载的 unix socket 连宿主 Docker：unix:///var/run/docker.sock
       # 也可直连 HTTP API：http://host:2375 或 https://host:2376
       host: ${RANGE_DOCKER_HOST:unix:///var/run/docker.sock}
+      # 应用访问靶机使用的宿主地址：与 Docker 同机为 127.0.0.1；
+      # 应用跑在容器里（挂载 docker.sock）时设为 host.docker.internal
+      host-address: ${RANGE_DOCKER_ADDRESS:127.0.0.1}
     # 单用户/单靶题并发实例上限
     max-instances-per-user: ${RANGE_MAX_PER_USER:3}
     # 全局并发上限
@@ -106,6 +109,8 @@ app:
     # AWD 轮次自动推进/check 扫描间隔
     tick-ms: ${AWD_TICK_MS:5000}
     check-interval-seconds: ${AWD_CHECK_INTERVAL_SECONDS:30}
+    # 轮换时写入运行中靶机的 flag 文件路径（镜像内绝对路径）
+    flag-file: ${AWD_FLAG_FILE:/flag}
     check:
       timeout-ms: ${AWD_CHECK_TIMEOUT_MS:3000}
       # NoopOrchestrator（无 Docker）下降级为模拟探活通过；生产启用 Docker 后自动走真实 TCP/HTTP 探活

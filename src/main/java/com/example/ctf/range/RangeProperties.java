@@ -14,5 +14,6 @@ public record RangeProperties(
         int portBridgeEnd,
         long sweepIntervalMs) {
 
-    public record Docker(String host) {}
+    /** host=连接 Docker 守护进程的地址；hostAddress=应用访问靶机时使用的宿主地址。 */
+    public record Docker(String host, String hostAddress) {}
 }

@@ -56,6 +56,9 @@ public class AwdService {
     @Value("${app.awd.check-interval-seconds:30}")
     private int checkIntervalSeconds;
 
+    @Value("${app.awd.flag-file:/flag}")
+    private String awdFlagFile;
+
     public AwdService(AwdRoundRepository roundRepository, AwdTeamRepository teamRepository,
                       AwdFlagRepository flagRepository, AwdAttackRepository attackRepository,
                       AwdScoreRepository scoreRepository, AwdCheckRepository checkRepository,
@@ -340,6 +343,14 @@ public class AwdService {
             team.setFlag(flag);
             team.setFlagRound(roundNo);
             teamRepository.save(team);
+            // 运行中的实例同步写入新 flag，保证对手从靶机里读到的是本轮 flag
+            if (team.getContainerId() != null && !team.getContainerId().isBlank()) {
+                try {
+                    orchestrator.updateFlag(team.getContainerId(), awdFlagFile, flag);
+                } catch (RuntimeException ex) {
+                    log.warn("AWD 轮换 flag 写入靶机失败 team={}: {}", team.getName(), ex.getMessage());
+                }
+            }
         }
     }
 

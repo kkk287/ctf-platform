@@ -2,11 +2,13 @@ package com.example.ctf.range;
 
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.command.CreateContainerResponse;
+import com.github.dockerjava.api.command.ExecCreateCmdResponse;
 import com.github.dockerjava.api.command.InspectContainerResponse;
 import com.github.dockerjava.api.command.PullImageResultCallback;
 import com.github.dockerjava.api.model.*;
 import com.github.dockerjava.core.DefaultDockerClientConfig;
 import com.github.dockerjava.core.DockerClientImpl;
+import com.github.dockerjava.core.command.ExecStartResultCallback;
 import com.github.dockerjava.httpclient5.ApacheDockerHttpClient;
 import com.github.dockerjava.transport.DockerHttpClient;
 import org.slf4j.Logger;
@@ -60,10 +62,12 @@ public class DockerOrchestrator implements RangeOrchestrator {
     @Override
     public OrchestratorInstance start(InstanceSpec spec) {
         try {
-            // 1. pull image（幂等，已存在时跳过）
-            client.pullImageCmd(spec.image())
-                    .exec(new PullImageResultCallback())
-                    .awaitCompletion(PULL_TIMEOUT_SEC, TimeUnit.SECONDS);
+            // 1. 本地已有镜像（离线自建/预加载）直接复用，避免 registry 拉取失败
+            if (!imageExists(spec.image())) {
+                client.pullImageCmd(spec.image())
+                        .exec(new PullImageResultCallback())
+                        .awaitCompletion(PULL_TIMEOUT_SEC, TimeUnit.SECONDS);
+            }
 
             // 2. HostConfig：资源限额 / 端口映射 / autoRemove
             HostConfig hostConfig = HostConfig.newHostConfig()
@@ -116,7 +120,9 @@ public class DockerOrchestrator implements RangeOrchestrator {
             }
 
             Integer mappedPort = resolveHostPort(inspect, spec.containerPort());
-            String host = "127.0.0.1";  // compose 默认 bridge 网络
+            // 应用与 Docker 同机为 127.0.0.1；应用本身跑在容器里（挂 docker.sock）配 host.docker.internal
+            String host = props.docker().hostAddress() == null || props.docker().hostAddress().isBlank()
+                    ? "127.0.0.1" : props.docker().hostAddress();
             return new OrchestratorInstance(containerId, containerId.substring(0, 12), host, mappedPort, null);
         } catch (Exception ex) {
             log.error("Docker start failed for {}: {}", spec.instanceId(), ex.getMessage(), ex);
@@ -142,7 +148,34 @@ public class DockerOrchestrator implements RangeOrchestrator {
     }
 
     @Override
+    public void updateFlag(String containerId, String flagFile, String flag) {
+        if (containerId == null || containerId.isBlank() || flag == null) return;
+        String path = flagFile == null || flagFile.isBlank() ? "/flag" : flagFile;
+        try {
+            ExecCreateCmdResponse exec = client.execCreateCmd(containerId)
+                    .withCmd("sh", "-c", "printf '%s' \"$AWD_NEW_FLAG\" > " + path)
+                    .withEnv(List.of("AWD_NEW_FLAG=" + flag))
+                    .withAttachStdout(false)
+                    .withAttachStderr(false)
+                    .exec();
+            client.execStartCmd(exec.getId()).exec(new ExecStartResultCallback())
+                    .awaitCompletion(10, TimeUnit.SECONDS);
+        } catch (Exception ex) {
+            throw new RuntimeException("update flag failed: " + ex.getMessage(), ex);
+        }
+    }
+
+    @Override
     public String backendName() { return "docker"; }
+
+    private boolean imageExists(String image) {
+        try {
+            client.inspectImageCmd(image).exec();
+            return true;
+        } catch (Exception ex) {
+            return false;
+        }
+    }
 
     private void safeRemove(String containerId) {
         try { client.removeContainerCmd(containerId).withForce(true).exec(); } catch (Exception ignored) {}
