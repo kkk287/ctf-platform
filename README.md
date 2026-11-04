@@ -447,7 +447,7 @@ docker inspect --format '{{json .State.Health}}' ctf-platform
 
 ## 已知限制
 
-- 动态靶机与 AWD：平台已提供 AWD 轮次状态机、flag 轮换计分、check 探活与 noop 降级（默认不改动宿主）。真实 Docker 实例下发需 `RANGE_ENABLED=true` 并挂载宿主 Docker，本轮未完成端到端实测，暂不作为开箱即用的能力承诺。
+- 动态靶机与 AWD：真实 Docker 实例下发已在本机实测通过（应用挂载 `docker.sock` + `RANGE_DOCKER_ADDRESS=host.docker.internal`），含真实 HTTP 探活、轮内 flag 写回与 STOP 回收；默认仍以 noop 降级运行，启用真实下发需 `RANGE_ENABLED=true`。
 - 不做 CTFd 插件/主题生态兼容。
 - 不做 OAuth 第三方登录，仅账号密码 + JWT。
 - 防作弊为基础版：留存 IP/UA 并给出同 IP 多账号告警，不做设备指纹或复杂风控。

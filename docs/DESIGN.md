@@ -392,10 +392,17 @@ P2「黑灯模式」已完成，`mvnw clean test` **35/35 全绿**（P1 13 + 动
 - 匿名 `GET /api/awd/rounds/{id}/scoreboard` → 401；匿名 `GET /api/admin/awd/rounds/{id}` → 401。
 - `npm run build` 通过（三入口产物）。
 
-### 真实 Docker 靶场现状（未完成实测）
+### 真实 Docker 靶场实测（已完成，2026-11-04）
 
-本轮尝试把 `RANGE_ENABLED=true` 的实例下发转成实测，卡在应用装配层：`DockerOrchestrator`（`@ConditionalOnProperty(app.range.enabled=true)`）与 `NoopOrchestrator`（无条件 `@Component`）同时注册，`RangeOrchestrator` 注入点出现两个候选 Bean，应用无法启动。该问题未在轮次内修复，因此：
+装配问题已修复：`NoopOrchestrator` 增加 `@ConditionalOnProperty(name="app.range.enabled", havingValue="false", matchIfMissing=true)`，与 `DockerOrchestrator` 互斥，任一配置下只有一个 `RangeOrchestrator`。`RANGE_ENABLED=false` 与 `RANGE_ENABLED=true` 均启动成功（后者日志出现 `DockerOrchestrator initialized, host=unix:///var/run/docker.sock`）。
 
-- 相关未验证改动（镜像本地复用、轮内 flag 写入容器、`RANGE_DOCKER_ADDRESS`）**已回退，不随本次提交入库**；
-- 真实实例下发、真实 TCP/HTTP 探活、STOP 回收容器**均未验证**，不作为交付能力；
-- 后续需先给 `NoopOrchestrator` 加 `@ConditionalOnProperty(name="app.range.enabled", havingValue="false", matchIfMissing=true)`，再按 `RANGE_DOCKER_ADDRESS=host.docker.internal` + 挂载 `docker.sock` 的方式补测。
+实测环境：应用跑在 Linux 容器内并挂载 `/var/run/docker.sock`，`RANGE_DOCKER_ADDRESS=host.docker.internal`；靶机镜像 `ctf-awd-target:local` 离线自建（`nginx:alpine` + 启动时把 `AWD_FLAG` 写入 `/flag`），本地已有镜像时跳过 pull。
+
+实测流程与证据（轮次 `80a83896`，每轮 180s，HTTP check，2 队）：
+
+- START 逐队 provision 真实容器：`ctf-inst-awd-80a83896-9580f8de` → 宿主端口 56046，`ctf-inst-awd-80a83896-f95f4f32` → 56035（`docker ps` 可见 `0.0.0.0:56046->80/tcp`）。
+- 容器内 `/flag` 与下发 flag 完全一致：`flag{awd_r1_9580f8de_ymbx0hmcbjez}` / `flag{awd_r1_f95f4f32_o8pd411g63zy}`。
+- `POST /api/admin/awd/rounds/{id}/checks` → 两队均 `HTTP 探活正常`（真实探活，非 noop 降级）。
+- 提交对手 flag：alice 用蓝队容器内 flag → +50；重复提交 → 409。
+- NEXT → 第 2 轮，蓝队新 flag `flag{awd_r2_f95f4f32_k41gdmukk6ik}` 已通过 `docker exec` 写回容器；旧 flag 提交 → 400；新 flag → +50。最终 TeamRed 100（rank1）、TeamBlue −40（rank2）。
+- STOP → `SCORING` 后两个实例被回收，`docker ps -a --filter name=ctf-inst-awd-` 计数为 0，无残留。
