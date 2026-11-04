@@ -5,7 +5,7 @@
 
 一个可直接从 GitHub 拉取、在服务器上用 **一条命令** 启动的 CTF 平台。同时支持**赛事（COMPETITION，限时、到点截止）**与**练习区（PRACTICE，长期开放、独立计分独立榜单）**两种模式；内置动态积分、一血/二血/三血奖励、提示扣分、个人榜与战队榜、管理后台与提交审计。
 
-本机直跑默认 H2 文件库，开箱即用，不依赖任何外部数据库；Docker Compose 默认编排 **MySQL 8 + Redis 7 + MongoDB 6** 全家桶（在 `.env` 设 `SPRING_PROFILES_ACTIVE=h2`、`REDIS_ENABLED=false`、`MONGO_ENABLED=false` 可回到轻量模式）。MySQL / PostgreSQL profile 可自由切换。前端全部为本地静态资源，**零外网 CDN**，内网/离线可用。
+本机直跑默认 H2 文件库，开箱即用，不依赖任何外部数据库；Docker Compose 默认编排**单服务 H2 轻量模式**（`docker compose up -d --build` 即可，无需 MySQL/Redis/MongoDB）。需要 MySQL 8 + Redis 7 + MongoDB 6 全家桶时改用 `docker compose -f docker-compose.full.yml up -d --build`。MySQL / PostgreSQL profile 可自由切换。前端全部为本地静态资源，**零外网 CDN**，内网/离线可用。
 
 ---
 
@@ -78,12 +78,12 @@
 | 框架 | Spring Boot 3.2.12 |
 | 构建 | Maven Wrapper（自带 Maven 3.9.9，无需本机安装） |
 | 持久化 | Spring Data JPA + Hibernate（`ddl-auto=validate`）+ Flyway 迁移 |
-| 数据库 | H2 文件库（本机默认）/ MySQL 8（compose 默认）/ PostgreSQL（可选 profile） |
+| 数据库 | H2 文件库（本机与 compose 默认）/ MySQL 8（`docker-compose.full.yml`）/ PostgreSQL（可选 profile） |
 | 缓存 | Redis 7（可选；JWT 吊销黑名单，缺省降级内存实现） |
 | 文档库 | MongoDB 6（可选；审计日志镜像 `op_logs`，缺省关闭） |
 | 安全 | Spring Security 6 + JWT（jjwt 0.12.5，含 jti 吊销）+ BCrypt + RBAC |
 | 文档 | springdoc-openapi 2.3.0 |
-| 前端 | 原生 HTML/CSS/JS（深色科技风，零构建、零 CDN） |
+| 前端 | Vue3 + Element Plus 三入口（选手/管理/大屏，构建产物随 jar 打包）+ 原生静态页（零 CDN） |
 | 部署 | Docker 多阶段构建 + Docker Compose v2 + GHCR + GitHub Actions |
 
 ## 仓库结构
@@ -144,17 +144,17 @@ sed -i "s|^JWT_SECRET=.*|JWT_SECRET=$(openssl rand -hex 32)|" .env
 docker compose up -d --build
 ```
 
-> 默认编排 **MySQL + Redis + MongoDB** 全家桶（应用默认 `mysql` profile，等依赖健康后再启动）。轻量体验：在 `.env` 设 `SPRING_PROFILES_ACTIVE=h2`、`REDIS_ENABLED=false`、`MONGO_ENABLED=false` 后重新 `docker compose up -d --build`。
+> 默认编排 **单服务 H2 轻量模式**（首次启动自动 Flyway 建表，数据落在 named volume `ctf-platform-data`）。需要 MySQL + Redis + MongoDB 全家桶：`docker compose -f docker-compose.full.yml up -d --build`（在 `.env` 设 `SPRING_PROFILES_ACTIVE=mysql` 等）。
 
 验证：
 
 ```bash
-docker compose ps                                  # mysql/redis/mongo/ctf 均应为 healthy
+docker compose ps                                  # ctf 应为 healthy
 curl -fsS http://127.0.0.1:8080/actuator/health    # {"status":"UP"}
 ```
 
 - 页面：`http://<服务器IP>:8080/`
-- 数据持久化：named volume `ctf-platform-mysql`（业务数据）、`ctf-platform-mongo`（审计镜像）、`ctf-platform-data` → 容器 `/app/data`（附件；H2 轻量模式时 H2 库也在此）
+- 数据持久化：named volume `ctf-platform-data` → 容器 `/app/data`（H2 库、附件与上传）；全家桶模式另有 `ctf-platform-mysql`、`ctf-platform-mongo`
 - 停止：`docker compose down`（保留数据）；彻底清理：`docker compose down -v`
 
 ---
@@ -416,6 +416,11 @@ docker inspect --format '{{json .State.Health}}' ctf-platform
 | GET | `/api/admin/submissions?...` | 提交审计 | ADMIN / JUDGE |
 | GET | `/api/admin/anomalies` | 异常告警 | ADMIN / JUDGE |
 | GET/POST/PUT/DELETE | `/api/admin/announcements...` | 公告管理 | ADMIN / JUDGE |
+| GET/POST | `/api/awd/...` · `/api/admin/awd/...` | AWD 轮次、队伍、check、实时比分与 attack | 登录 / ADMIN |
+| GET | `/api/public/awd/rounds/current?eventId=` | 大屏匿名当前轮次比分（不含 flag、攻击明细与实例地址） | 公开 |
+| GET | `/api/public/awd/rounds/{id}/scoreboard` | 大屏匿名指定轮次比分 | 公开 |
+
+> `/api/public/**` 仅用于大屏/匿名展示：返回队名、攻防得分、总分、排名、轮号与状态；**不返回 flag、攻击记录明细、靶机 host/port/containerId**。需要 flag 等敏感字段的接口仍走 JWT。
 
 ## 配置项
 
@@ -442,7 +447,7 @@ docker inspect --format '{{json .State.Health}}' ctf-platform
 
 ## 已知限制
 
-- 不做动态靶机下发：Pwn/Reverse 通过附件 + 题目描述中的外部地址承载，平台不启停靶机（已列入 v2.0 路线图 P2，见 [docs/DESIGN.md](docs/DESIGN.md)）。
+- 动态靶机与 AWD：平台已提供 AWD 轮次状态机、flag 轮换计分、check 探活与 noop 降级（默认不改动宿主）。真实 Docker 实例下发需 `RANGE_ENABLED=true` 并挂载宿主 Docker，本轮未完成端到端实测，暂不作为开箱即用的能力承诺。
 - 不做 CTFd 插件/主题生态兼容。
 - 不做 OAuth 第三方登录，仅账号密码 + JWT。
 - 防作弊为基础版：留存 IP/UA 并给出同 IP 多账号告警，不做设备指纹或复杂风控。
